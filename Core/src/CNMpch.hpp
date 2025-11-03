@@ -1,26 +1,24 @@
 #pragma once
 
 // STANDARD LIBRARY
-#include <algorithm>
-#include <array>
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <functional>
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <optional>
-#include <set>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
-#include <sstream>
 #include <stdexcept>
 #include <vector>
-#include <unordered_map>
-#include <unordered_set>
 
 #ifdef CNM_Platform_Windows
-#include <Windows.h>
+#include <WinSock2.h>
+#endif
+
+#ifdef CNM_Platform_Linux || CNM_Platform_Mac
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <fcntl.h>
 #endif

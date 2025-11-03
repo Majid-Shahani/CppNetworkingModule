@@ -9,6 +9,8 @@ project "App"
 	
 	files
 	{
+		"src/**.h",
+		"src/**.c",
 		"src/**.hpp",
 		"src/**.cpp"
 	}
@@ -28,6 +30,20 @@ project "App"
 		defines
 		{
 			"CNM_Platform_Windows"
+		}
+		links
+		{
+			"Ws2_32.lib"
+		}
+	filter "system:linux"
+		defines
+		{
+			"CNM_Platform_Linux"
+		}
+	filter "system:macosx"
+		defines
+		{
+			"CNM_Platform_Mac"
 		}
 
 	filter "configurations:Debug"

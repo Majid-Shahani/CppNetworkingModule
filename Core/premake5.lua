@@ -13,7 +13,9 @@ project "Core"
 	files
 	{
 		"src/**.hpp",
-		"src/**.cpp"
+		"src/**.cpp",
+		"src/**.h",
+		"src/**.c",
 	}
 	
 	includedirs
@@ -25,20 +27,23 @@ project "Core"
 	{
 	}
 	
-
+--------------------------- PLATFORMS --------------------------------
 	filter "system:windows"
 		systemversion "latest"
 		defines
 		{
 			"CNM_Platform_Windows"
 		}
-		includedirs
+	filter "system:linux"
+		defines
 		{
+			"CNM_Platform_Linux"
 		}
-		links
+	filter "system:macosx"
+		defines
 		{
+			"CNM_Platform_Mac"
 		}
-
 --------------------------------- CONFIGS -------------------------
 	filter "configurations:Debug"
 		defines 
