@@ -1,6 +1,9 @@
 #include <CNM.h>
 
 int main() {
-	CNM::Sockets mySock;
+	Carnival::Network::Sockets mySock;
+	mySock.createSocket(1);
+	mySock.bindSocket(1);
+
 	return 0;
 }

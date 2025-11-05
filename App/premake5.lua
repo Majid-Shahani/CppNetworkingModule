@@ -29,7 +29,7 @@ project "App"
 		systemversion "latest"
 		defines
 		{
-			"CNM_Platform_Windows"
+			"CL_Platform_Windows"
 		}
 		links
 		{
@@ -38,25 +38,28 @@ project "App"
 	filter "system:linux"
 		defines
 		{
-			"CNM_Platform_Linux"
+			"CL_Platform_Linux"
 		}
 	filter "system:macosx"
 		defines
 		{
-			"CNM_Platform_Mac"
+			"CL_Platform_Mac"
 		}
 
 	filter "configurations:Debug"
+		defines "CL_DEBUG"
 		runtime "Debug"
 		optimize "Off"
 		symbols "Full"
 
 	filter "configurations:Release"
+		defines "CL_RELEASE"
 		runtime "Release"
 		optimize "On"
 		symbols "Off"
 
 	filter "configurations:Dist"
+		defines "CL_DIST"
 		runtime "Release"
 		optimize "Full"
 		symbols "Off"

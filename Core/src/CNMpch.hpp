@@ -12,12 +12,13 @@
 #include <string>
 #include <stdexcept>
 #include <vector>
+#include <unordered_map>
 
-#ifdef CNM_Platform_Windows
+#ifdef CL_Platform_Windows
 #include <WinSock2.h>
 #endif
 
-#ifdef CNM_Platform_Linux || CNM_Platform_Mac
+#if defined(CL_Platform_Linux) || defined(CL_Platform_Mac)
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>

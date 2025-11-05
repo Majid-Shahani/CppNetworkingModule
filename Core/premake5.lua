@@ -32,22 +32,24 @@ project "Core"
 		systemversion "latest"
 		defines
 		{
-			"CNM_Platform_Windows"
+			"CL_Platform_Windows"
 		}
 	filter "system:linux"
 		defines
 		{
-			"CNM_Platform_Linux"
+			"CL_Platform_Linux"
 		}
 	filter "system:macosx"
 		defines
 		{
-			"CNM_Platform_Mac"
+			"CL_Platform_Mac"
 		}
 --------------------------------- CONFIGS -------------------------
 	filter "configurations:Debug"
 		defines 
 		{
+			"CL_DEBUG",
+			"CL_ENABLE_ASSERTS",
 		}
 		symbols "Full"
 		runtime "Debug"
@@ -57,6 +59,7 @@ project "Core"
 		}
 			
 	filter "configurations:Release"
+		defines "CL_RELEASE"
 		runtime "Release"
 		optimize "On"
 		symbols "Off"
@@ -65,6 +68,7 @@ project "Core"
 		}
 			
 	filter "configurations:Dist"
+		defines "CL_DIST"
 		runtime "Release"
 		optimize "Full"
 		symbols "Off"
