@@ -158,15 +158,14 @@ namespace Carnival::Network {
 				maxPacketSize, 0, (sockaddr*)&from, &fromLength);
 
 			if (bytes <= 0 || bytes == SOCKET_ERROR) {
-				int err = WSAGetLastError();
-				if (err == WSAEWOULDBLOCK)	return;
+				return;
 			}
 
 			uint32_t fromAddr = ntohl(from.sin_addr.s_addr);
 			uint16_t fromPort = ntohs(from.sin_port);
 
 			// process
-			packetData[(bytes >= 255 ? 255 : bytes + 1)] = '\0';
+			packetData[(bytes >= (sizeof(packetData) - 1) ? sizeof(packetData) - 1 : bytes)] = '\0';
 			std::cout << packetData << '\n';
 		}
 	}
