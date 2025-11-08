@@ -1,8 +1,8 @@
-#include <CNMpch.hpp>
+#include <src/CNMpch.hpp>
 
 #ifdef CL_Platform_Windows
-#include <CNM/Sockets.h>
-#include <CNM/macros.h>
+#include <include/CNM/macros.h>
+#include <include/CNM/Sockets.h>
 
 static WORD winsockVersion = MAKEWORD(2, 2);
 static WSADATA wsaData;
@@ -39,7 +39,7 @@ namespace Carnival::Network {
 		CL_CORE_ASSERT(s_Initialized, "WSA uninitialized");
 
 		if (m_Sockets.contains(socketKey))	deleteSocket(socketKey);
-		if (data.Status == SocketStatus::SOCKERROR) data.Status = SocketStatus::NONE;
+		if (data.Status & SocketStatus::SOCKERROR) data.Status = SocketStatus::NONE;
 		
 		data.Handle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		if (data.Handle == INVALID_SOCKET)

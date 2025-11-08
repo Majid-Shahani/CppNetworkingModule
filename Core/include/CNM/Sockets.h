@@ -19,7 +19,7 @@ namespace Carnival::Network {
 		REUSEADDR	= 1 << 4,
 		BROADCAST	= 1 << 5,
 		*/
-		SOCKERROR	= 0xFF,		// socket-level error
+		SOCKERROR	= 1 << 7,		// socket-level error
 	};
 
 	// Address will be set in host byte order after call to bind / send

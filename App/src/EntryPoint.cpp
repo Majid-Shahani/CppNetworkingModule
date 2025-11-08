@@ -1,4 +1,4 @@
-#include <CNM.h>
+#include <include/CNM.h>
 
 namespace cnm = Carnival::Network;
 int main() {
@@ -12,7 +12,7 @@ int main() {
 	
 	const char msg[] = "Hello";
 	mySock.sendPackets(1, msg, sizeof(msg), addr);
-	mySock.sendPackets(1, msg, strlen(msg), addr);
+	//mySock.sendPackets(1, msg, strlen(msg), addr);
 	mySock.receivePackets(1);
 	mySock.receivePackets(1);
 

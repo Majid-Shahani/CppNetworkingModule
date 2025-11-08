@@ -7,11 +7,15 @@ project "Core"
 	targetdir ("%{wks.location}/bin/" .. outputdir .. "/%{prj.name}")
 	objdir ("%{wks.location}/bin-int/" .. outputdir .. "/%{prj.name}")
 	
-	pchheader "CNMpch.hpp"
+	pchheader "src/CNMpch.hpp"
 	pchsource "src/CNMpch.cpp"
 	
 	files
 	{
+		"include/**.hpp",
+		"include/**.cpp",
+		"include/**.h",
+		"include/**.c",
 		"src/**.hpp",
 		"src/**.cpp",
 		"src/**.h",
@@ -20,7 +24,7 @@ project "Core"
 	
 	includedirs
 	{
-		"src"
+		"%{wks.location}/%{prj.name}/",
 	}
 	
 	links
