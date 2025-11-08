@@ -7,27 +7,32 @@ namespace Carnival::Network {
 		CONNECTION_LESS		= 1,
 	};
 
-#define BIT(x) (1 << x)
-	// This is Defined and undefined here in anticipation
-	// of being added to my game engine which has this macro defined
 	enum SocketStatus : uint8_t
 	{
 		NONE		= 0,		// uninitialized or closed
-		OPEN		= BIT(0),	// handle created and valid
-		BOUND		= BIT(1),	// bound to port/address
-		ACTIVE		= BIT(2),	// in-use by the program
-		NONBLOCKING	= BIT(3),	// recv & send immediate return
+		OPEN		= 1,	// handle created and valid
+		BOUND		= 1 << 1,	// bound to port/address
+		ACTIVE		= 1 << 2,	// in-use by the program
+		NONBLOCKING	= 1 << 3,	// recv & send immediate return
 		/*
 		For Later Use
-		REUSEADDR	= BIT(4),
-		BROADCAST	= BIT(5),
+		REUSEADDR	= 1 << 4,
+		BROADCAST	= 1 << 5,
 		*/
-		SOCKERROR	= ~0,		// socket-level error
+		SOCKERROR	= 0xFF,		// socket-level error
 	};
-#undef BIT
+
+	// Address will be set in host byte order after call to bind / send
+	union ipv4_addr {
+		uint32_t addr32{};
+		uint16_t addr16[2];
+		uint8_t addr8[4];
+	};
 
 	struct SocketData {
 		uint64_t		Handle	= 0;
+		ipv4_addr		OutAddress{};
+		ipv4_addr		InAddress{};
 		uint16_t		Port	= 0;
 		SocketType		Type	= CONNECTION_LESS;
 		SocketStatus	Status	= SocketStatus::NONE;
@@ -35,8 +40,8 @@ namespace Carnival::Network {
 
 	class Sockets {
 	public:
-		Sockets();
-		~Sockets();
+		Sockets() noexcept;
+		~Sockets() noexcept;
 
 		Sockets(const Sockets&)				= delete;
 		Sockets& operator=(const Sockets&)	= delete;
@@ -46,11 +51,13 @@ namespace Carnival::Network {
 		bool deleteSocket(uint8_t socketKey);
 		bool deleteAllSockets();
 
-		bool bindSocket(uint8_t socketKey, uint32_t ipv4_addr = 0, uint16_t port = 0);
-
+		// pass in an address a.b.c.d as (a << 24) | (b << 16) | (c <<8) | d
+		// SocketData InAddress is overwritten after call to bind
+		bool bindSocket(uint8_t socketKey, uint16_t port = 0, ipv4_addr inAddr = {});
+		bool sendPackets(uint8_t socketKey, const char* packetData, int packetSize, ipv4_addr outAddr = {});
 	private:
 		static inline bool s_Initialized{ false };
-		std::unordered_map<uint8_t, SocketData> m_Sockets; // need getter or change logic to store outside
+		std::unordered_map<uint8_t, SocketData> m_Sockets;
 	};
 
 }
