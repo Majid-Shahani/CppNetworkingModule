@@ -55,6 +55,7 @@ namespace Carnival::Network {
 		// SocketData InAddress is overwritten after call to bind
 		bool bindSocket(uint8_t socketKey, uint16_t port = 0, ipv4_addr inAddr = {});
 		bool sendPackets(uint8_t socketKey, const char* packetData, int packetSize, ipv4_addr outAddr = {});
+		void receivePackets(uint8_t socketKey);
 	private:
 		static inline bool s_Initialized{ false };
 		std::unordered_map<uint8_t, SocketData> m_Sockets;

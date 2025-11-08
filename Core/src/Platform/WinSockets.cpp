@@ -39,7 +39,7 @@ namespace Carnival::Network {
 		CL_CORE_ASSERT(s_Initialized, "WSA uninitialized");
 
 		if (m_Sockets.contains(socketKey))	deleteSocket(socketKey);
-		if (data.Status & SocketStatus::SOCKERROR) data.Status = SocketStatus::NONE;
+		if (data.Status == SocketStatus::SOCKERROR) data.Status = SocketStatus::NONE;
 		
 		data.Handle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		if (data.Handle == INVALID_SOCKET)
@@ -131,14 +131,44 @@ namespace Carnival::Network {
 		sockaddr_in address{};
 		address.sin_family = AF_INET;
 
-		if (addr.addr32 = 0)	address.sin_addr.s_addr = socket.OutAddress.addr32;
-		else					address.sin_addr.s_addr = addr.addr32;
+		if (addr.addr32 == 0)	address.sin_addr.s_addr = htonl(socket.OutAddress.addr32);
+		else					address.sin_addr.s_addr = htonl(addr.addr32);
 		
-		address.sin_port = socket.Port;
+		address.sin_port = htons(socket.Port);
 
 		int sent = sendto(socket.Handle, packetData, packetSize, 0, (sockaddr*) &address, sizeof(sockaddr_in));
 		if (sent != packetSize) return false;
 		else return true;
+	}
+	void Sockets::receivePackets(uint8_t socketKey)
+	{
+		CL_CORE_ASSERT(s_Initialized, "WSA uninitialized");
+		CL_CORE_ASSERT(m_Sockets.contains(socketKey), "Map does not include socket key: {}", socketKey);
+		while (true)
+		{
+			uint8_t packetData[256];
+			uint32_t maxPacketSize = sizeof(packetData);
+			
+			sockaddr_in from{};
+			int fromLength = sizeof(from);
+
+			auto& socket = m_Sockets.at(socketKey);
+
+			int64_t bytes = recvfrom(socket.Handle, (char*)packetData, 
+				maxPacketSize, 0, (sockaddr*)&from, &fromLength);
+
+			if (bytes <= 0 || bytes == SOCKET_ERROR) {
+				int err = WSAGetLastError();
+				if (err == WSAEWOULDBLOCK)	return;
+			}
+
+			uint32_t fromAddr = ntohl(from.sin_addr.s_addr);
+			uint16_t fromPort = ntohs(from.sin_port);
+
+			// process
+			packetData[(bytes >= 255 ? 255 : bytes + 1)] = '\0';
+			std::cout << packetData << '\n';
+		}
 	}
 }
 #endif
