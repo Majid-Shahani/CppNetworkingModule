@@ -24,6 +24,7 @@ project "Core"
 	
 	includedirs
 	{
+		"%{wks.location}/%{prj.name}/include",
 		"%{wks.location}/%{prj.name}/",
 	}
 	

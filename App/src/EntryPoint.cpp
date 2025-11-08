@@ -1,4 +1,4 @@
-#include <include/CNM.h>
+#include <CNM.h>
 
 namespace cnm = Carnival::Network;
 int main() {

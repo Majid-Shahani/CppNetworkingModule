@@ -17,7 +17,7 @@ project "App"
 	
 	includedirs
 	{
-		"%{wks.location}/Core/",
+		"%{wks.location}/Core/include",
 		"%{wks.location}/%{prj.name}/src",
 	}
 	

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 namespace Carnival::Network {
 	enum SocketType : uint8_t
 	{

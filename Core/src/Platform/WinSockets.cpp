@@ -1,6 +1,7 @@
 #include <src/CNMpch.hpp>
 
 #ifdef CL_Platform_Windows
+
 #include <include/CNM/macros.h>
 #include <include/CNM/Sockets.h>
 
