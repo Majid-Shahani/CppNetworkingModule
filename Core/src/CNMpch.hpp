@@ -1,6 +1,7 @@
 #pragma once
 
 // STANDARD LIBRARY
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>

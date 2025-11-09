@@ -2,19 +2,25 @@
 
 namespace cnm = Carnival::Network;
 int main() {
-	cnm::Sockets mySock;
-	cnm::SocketData sockData{};
-	sockData.Status = cnm::NONBLOCKING;
-	mySock.createSocket(1, sockData);
-
 	cnm::ipv4_addr addr{.addr32 = (127 << 24) | 1};
-	mySock.bindSocket(1, 0, addr);
 	
+	cnm::SocketData sockData{
+		.OutAddress = addr,
+		.InAddress = addr,
+		.Port = 0,
+		.Type = cnm::CONNECTION_LESS,
+		.Status = cnm::NONBLOCKING
+	};
+
+	cnm::Socket mySock{sockData};
+	
+	mySock.openSocket();
+	mySock.bindSocket();
 	const char msg[] = "Hello";
-	mySock.sendPackets(1, msg, sizeof(msg), addr);
-	//mySock.sendPackets(1, msg, strlen(msg), addr);
-	mySock.receivePackets(1);
-	mySock.receivePackets(1);
+	mySock.sendPackets(msg, sizeof(msg));
+	mySock.sendPackets(msg, strlen(msg));
+	mySock.receivePackets();
+	mySock.receivePackets();
 
 	return 0;
 }

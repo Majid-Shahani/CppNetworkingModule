@@ -32,6 +32,11 @@ project "Core"
 	{
 	}
 	
+--------------------------- ARCHITECTURE -----------------------------
+	filter "architecture:x86_64"
+		defines "CL_X64"
+	filter "architecture:ARM64"
+		defines "CL_ARM64"
 --------------------------- PLATFORMS --------------------------------
 	filter "system:windows"
 		systemversion "latest"
