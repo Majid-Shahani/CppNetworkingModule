@@ -1,19 +1,25 @@
 #pragma once
-//STL
-#include <unordered_map>
 //CNM
 #include <CNM/CNMtypes.h>
 
 namespace Carnival::Network {
-	struct SocketData {
-		ipv4_addr		OutAddress{};
-		ipv4_addr		InAddress{};
-		uint16_t		Port	= 0;
-		SocketType		Type	= CONNECTION_LESS;
-		SocketStatus	Status	= SocketStatus::NONE;
-	};
 
 	class Socket {
+	private:
+		enum SocketStatus : uint8_t
+		{
+			NONE = 0,		// uninitialized or closed
+			OPEN = 1,	// handle created and valid
+			BOUND = 1 << 1,	// bound to port/address
+			ACTIVE = 1 << 2,	// in-use by the program
+			NONBLOCKING = 1 << 3,	// recv & send immediate return
+			/*
+			For Later Use
+			REUSEADDR	= 1 << 4,
+			BROADCAST	= 1 << 5,
+			*/
+			SOCKERROR = 1 << 7,		// socket-level error
+		};
 	public:
 		Socket(SocketData& initData) noexcept;
 		~Socket() noexcept;
@@ -29,32 +35,29 @@ namespace Carnival::Network {
 		// pass in an address a.b.c.d as (a << 24) | (b << 16) | (c <<8) | d
 		// SocketData port (if 0) is overwritten after call to bindSocket
 		bool bindSocket();
-		bool sendPackets(const char* packetData, int packetSize) const;
-		void receivePackets() const;
+		bool sendPackets(ipv4_addr outAddr, const char* packetData, int packetSize) const;
+		bool receivePackets() const;
 
 		// Status Checking
-		bool isOpen() const	{ return (m_Status & SocketStatus::OPEN); }
-		bool isBound() const { return (m_Status & SocketStatus::BOUND); }
-		SocketStatus getStatus() const { return m_Status; }
-
+		bool isOpen() const			{ return (m_Status & SocketStatus::OPEN); }
+		bool isBound() const		{ return (m_Status & SocketStatus::BOUND); }
+		bool isError() const		{ return (m_Status & SocketStatus::SOCKERROR); }
+		bool isNonBlocking() const	{ return (m_Status & SocketStatus::NONBLOCKING); }
 		// Set Flags
-		void setStatusFlag(SocketStatus flags) { m_Status = flags; }
-		void addStatusFlag(SocketStatus flags) { m_Status = static_cast<SocketStatus>(m_Status | flags); }
+		void setNonBlocking(bool is) { m_Status = static_cast<SocketStatus>(m_Status | is << 3); }
 
 		// Set Address & Port, calls to these will cause a reset to the socket if bound
-		void setOutAddress(ipv4_addr outAddr) { m_OutAddress = outAddr; } // if mid-send what to do? wait?
 		void setInAddress(ipv4_addr inAddr);
 		void setPort(uint16_t port);
 
 	private:
 		// Host Byte Order for Address and Port
 		uint64_t		m_Handle = 0;
-		ipv4_addr		m_OutAddress{};
 		ipv4_addr		m_InAddress{};
 		uint16_t		m_Port = 0;
-		SocketType		m_Type = CONNECTION_LESS;
 		SocketStatus	m_Status = SocketStatus::NONE;
-		// 32-bit padding for alignment at the end
+		char			m_Padding[1] = {0};
+		// 8-bit padding for alignment at the end
 	};
 
 }

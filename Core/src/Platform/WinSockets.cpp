@@ -41,6 +41,7 @@ namespace {
 				}
 			}
 		}
+		// Possible issues : WSAStartup will fail and a thread will busy-wait until another thread attempt a WSAStartup
 	}
 }
 
@@ -54,19 +55,14 @@ namespace Carnival::Network {
 		socketRefCount.fetch_add(1, std::memory_order_release);
 
 		// Set
-		if (initData.Status & SocketStatus::SOCKERROR)
-			m_Status = SocketStatus::NONE;
-		else
-			m_Status = initData.Status;
-
-		m_OutAddress = initData.OutAddress;
+		m_Status = (initData.NonBlocking? SocketStatus::NONBLOCKING : SocketStatus::NONE);
 		m_InAddress = initData.InAddress;
 		m_Port = initData.Port;
-		m_Type = initData.Type;
+		//m_Type = initData.Type;
 	}
 	Socket::~Socket() noexcept 
 	{
-		closeSocket();
+		if(isOpen() || isBound()) closeSocket();
 		if (socketRefCount.fetch_sub(1, std::memory_order_acquire) == 1)
 		{
 			WSACleanup();
@@ -114,7 +110,7 @@ namespace Carnival::Network {
 	bool Socket::bindSocket()
 	{
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
-		CL_CORE_ASSERT(isOpen(), "Socket Must be open before binding.");
+		CL_CORE_ASSERT(isOpen() && !isError(), "Socket Must be open before binding.");
 		
 		sockaddr_in service{};
 		service.sin_family = AF_INET;
@@ -138,45 +134,45 @@ namespace Carnival::Network {
 
 		return true;
 	}
-	bool Socket::sendPackets(const char* packetData, int packetSize) const
+	bool Socket::sendPackets(ipv4_addr outAddr, const char* packetData, int packetSize) const
 	{
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
-		CL_CORE_ASSERT(isBound(), "Socket Must be Bound before Sending Packets.");
+		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Sending Packets.");
 		CL_CORE_ASSERT(packetSize != 0, "Packet Size is 0");
 		CL_CORE_ASSERT(packetData != nullptr, "Packet Data Poiner is null.");
 		
 		sockaddr_in address{};
 		address.sin_family = AF_INET;
-		address.sin_addr.s_addr = htonl(m_OutAddress.addr32);
+		address.sin_addr.s_addr = htonl(outAddr.addr32);
 		address.sin_port = htons(m_Port);
 
 		int sent = sendto(m_Handle, packetData, packetSize, 0, (sockaddr*) &address, sizeof(sockaddr_in));
 		if (sent != packetSize) return false;
 		else return true;
 	}
-	void Socket::receivePackets() const
+	bool Socket::receivePackets() const
 	{
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
-		CL_CORE_ASSERT(isBound(), "Socket Must be Bound before Receiving Packets.");
+		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Receiving Packets.");
 		while (true)
 		{
-			uint8_t packetData[256];
+			uint8_t packetData[256] = "";
 			uint32_t maxPacketSize = sizeof(packetData);
 			
-			sockaddr_in from{};
-			int fromLength = sizeof(from);
+			thread_local sockaddr_in from{};
+			thread_local int fromLength = sizeof(from);
 
 			int64_t bytes = recvfrom(m_Handle, (char*)packetData, 
 				maxPacketSize, 0, (sockaddr*)&from, &fromLength);
 
 			if (bytes <= 0 || bytes == SOCKET_ERROR) {
-				return;
+				return false;
 			}
 
+			// process
 			uint32_t fromAddr = ntohl(from.sin_addr.s_addr);
 			uint16_t fromPort = ntohs(from.sin_port);
 
-			// process
 			packetData[(bytes >= (sizeof(packetData) - 1) ? sizeof(packetData) - 1 : bytes)] = '\0';
 			std::cout << packetData << '\n';
 		}
