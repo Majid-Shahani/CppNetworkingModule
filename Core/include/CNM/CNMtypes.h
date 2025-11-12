@@ -11,7 +11,7 @@ namespace Carnival::Network {
 	struct SocketData {
 		ipv4_addr	InAddress{};
 		uint16_t	Port = 0;
-		uint8_t		ConnectionOriented = false;
+		uint8_t		Reliable = false;
 		uint8_t		NonBlocking = true;
 	};
 }

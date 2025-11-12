@@ -46,7 +46,7 @@ namespace {
 }
 
 namespace Carnival::Network {
-	Socket::Socket(SocketData& initData) noexcept
+	Socket::Socket(const SocketData& initData) noexcept
 	{
 		if (winsockState.load(std::memory_order_acquire) != WSAState::INITIALIZED) {
 			// multiple threads entering this will be handled down the line via compare exchange strong
@@ -62,7 +62,7 @@ namespace Carnival::Network {
 	}
 	Socket::~Socket() noexcept 
 	{
-		if(isOpen() || isBound()) closeSocket();
+		if(isOpen() || isBound() || m_Handle != INVALID_SOCKET) closeSocket();
 		if (socketRefCount.fetch_sub(1, std::memory_order_acquire) == 1)
 		{
 			WSACleanup();
@@ -70,16 +70,46 @@ namespace Carnival::Network {
 		}
 	}
 
+	Socket::Socket(Socket&& other) noexcept
+		: m_Handle{ other.m_Handle },
+		m_InAddress{ other.m_InAddress },
+		m_Port{ other.m_Port },
+		m_Status{ other.m_Status }
+	{
+		other.m_Handle = INVALID_SOCKET;
+		other.m_InAddress.addr32 = 0;
+		other.m_Port = 0;
+		other.m_Status = SocketStatus::NONE;
+	}
+
+	Socket& Socket::operator=(Socket&& other) noexcept
+	{
+		if (this != &other) {
+			closeSocket();
+			m_Handle = other.m_Handle;
+			m_InAddress = other.m_InAddress;
+			m_Port = other.m_Port;
+			m_Status = other.m_Status;
+
+			other.m_Handle = INVALID_SOCKET;
+			other.m_InAddress.addr32 = 0;
+			other.m_Port = 0;
+			other.m_Status = SocketStatus::NONE;
+		}
+		return *this;
+	}
+
 	void Socket::openSocket()
 	{
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
-		
-		m_Handle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-		if (m_Handle == INVALID_SOCKET)
-		{
-			std::cerr << "Failed to Open Socket.\n";
-			m_Status = SocketStatus::SOCKERROR;
-			return;
+		if (m_Handle == INVALID_SOCKET) {
+			m_Handle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+			if (m_Handle == INVALID_SOCKET)
+			{
+				std::cerr << "Failed to Open Socket.\n";
+				m_Status = SocketStatus::SOCKERROR;
+				return;
+			}
 		}
 		m_Status = static_cast<SocketStatus>(SocketStatus::OPEN | m_Status);
 
@@ -96,13 +126,13 @@ namespace Carnival::Network {
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isOpen(), "Socket must be open before closing.");
 		
-		if (closesocket(m_Handle) == SOCKET_ERROR) {
+		if (!(m_Handle == INVALID_SOCKET) && closesocket(m_Handle) == SOCKET_ERROR) {
 			m_Status = SocketStatus::SOCKERROR;
 			return false;
 		}
 		else {
 			m_Status = static_cast<SocketStatus>(m_Status & (~SocketStatus::OPEN) & (~SocketStatus::BOUND));
-			m_Handle = NULL;
+			m_Handle = INVALID_SOCKET;
 			return true;
 		}
 	}
@@ -111,7 +141,8 @@ namespace Carnival::Network {
 	{
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isOpen() && !isError(), "Socket Must be open before binding.");
-		
+		if (m_Handle == INVALID_SOCKET) return false;
+
 		sockaddr_in service{};
 		service.sin_family = AF_INET;
 		service.sin_addr.s_addr = htonl(m_InAddress.addr32);
@@ -134,17 +165,20 @@ namespace Carnival::Network {
 
 		return true;
 	}
-	bool Socket::sendPackets(ipv4_addr outAddr, const char* packetData, int packetSize) const
+	bool Socket::sendPackets(const char* packetData, const int packetSize, const ipv4_addr outAddr, uint16_t port) const
 	{
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Sending Packets.");
 		CL_CORE_ASSERT(packetSize != 0, "Packet Size is 0");
 		CL_CORE_ASSERT(packetData != nullptr, "Packet Data Poiner is null.");
 		
+		if (m_Handle == INVALID_SOCKET) return false;
+
 		sockaddr_in address{};
 		address.sin_family = AF_INET;
 		address.sin_addr.s_addr = htonl(outAddr.addr32);
-		address.sin_port = htons(m_Port);
+		if (port == 0) address.sin_port = htons(m_Port);
+		else address.sin_port = htons(port);
 
 		int sent = sendto(m_Handle, packetData, packetSize, 0, (sockaddr*) &address, sizeof(sockaddr_in));
 		if (sent != packetSize) return false;
@@ -154,6 +188,9 @@ namespace Carnival::Network {
 	{
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Receiving Packets.");
+
+		if (m_Handle == INVALID_SOCKET) return false;
+
 		while (true)
 		{
 			uint8_t packetData[256] = "";
@@ -178,22 +215,39 @@ namespace Carnival::Network {
 		}
 	}
 
+	void Socket::setNonBlocking(bool is)
+	{
+		if (m_Status & SocketStatus::NONBLOCKING) return;
+		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
+
+		m_Status = static_cast<SocketStatus>(m_Status | is << 3);
+		if (isOpen() && m_Handle != INVALID_SOCKET) {
+			bool flag = isBound();
+			closeSocket();
+			openSocket();
+			if (flag) bindSocket();
+		}
+	}
 	void Socket::setInAddress(ipv4_addr inAddr)
 	{
+		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
 		m_InAddress = inAddr;
 		// wait for transfers to complete maybe
 		// different queue for new packets or they are tagged
-		if (isBound()) {
+		if (isBound() && m_Handle != INVALID_SOCKET) {
 			closeSocket();
 			openSocket();
+			bindSocket();
 		}
 	}
 	void Socket::setPort(uint16_t port)
 	{
+		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
 		m_Port = port;
-		if (isBound()) {
+		if (isBound() && m_Handle != INVALID_SOCKET) {
 			closeSocket();
 			openSocket();
+			bindSocket();
 		}
 	}
 }

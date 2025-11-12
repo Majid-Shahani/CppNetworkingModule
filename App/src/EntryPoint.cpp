@@ -7,20 +7,31 @@ int main() {
 	cnm::SocketData sockData{
 		.InAddress = addr,
 		.Port = 0,
-		.ConnectionOriented = false,
+		.Reliable = false,
 		.NonBlocking = true
 	};
 
 	cnm::Socket mySock{sockData};
-	std::cout << "Size of mySock: " << sizeof(mySock) << '\n';
-	std::cout << "Size of sockData: " << sizeof(sockData) << '\n';
-
 	mySock.openSocket();
 	mySock.bindSocket();
 	const char msg[] = "Hello";
-	mySock.sendPackets(addr, msg, sizeof(msg));
+	mySock.sendPackets(msg, sizeof(msg), addr);
 	mySock.receivePackets();
-	mySock.receivePackets();
+
+	std::cout << "Socket2:\n";
+	cnm::Socket mySock2 = std::move(mySock);
+	mySock2.openSocket();
+	mySock2.bindSocket();
+	mySock2.sendPackets(msg, sizeof(msg), addr);
+	mySock2.receivePackets();
+
+	// Test
+	struct packHeader {
+		const uint32_t ProtocolVersion{cnm::HEADER_VERSION};
+		std::atomic<uint32_t> ackField{ 0 };
+		std::atomic<uint32_t> SeqNumber{ 0 };
+	} myHeader;
+	std::cout << "Packet header size: " << sizeof(myHeader) << '\n';
 
 	return 0;
 }
