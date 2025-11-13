@@ -57,7 +57,7 @@ namespace Carnival::Network {
 		// Set
 		m_Status = (initData.NonBlocking? SocketStatus::NONBLOCKING : SocketStatus::NONE);
 		m_InAddress = initData.InAddress;
-		m_Port = initData.Port;
+		m_Port = initData.InPort;
 		//m_Type = initData.Type;
 	}
 	Socket::~Socket() noexcept 
@@ -69,7 +69,6 @@ namespace Carnival::Network {
 			winsockState.store(WSAState::UNINITIALIZED, std::memory_order_release);
 		}
 	}
-
 	Socket::Socket(Socket&& other) noexcept
 		: m_Handle{ other.m_Handle },
 		m_InAddress{ other.m_InAddress },
@@ -81,7 +80,6 @@ namespace Carnival::Network {
 		other.m_Port = 0;
 		other.m_Status = SocketStatus::NONE;
 	}
-
 	Socket& Socket::operator=(Socket&& other) noexcept
 	{
 		if (this != &other) {

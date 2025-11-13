@@ -10,8 +10,15 @@ namespace Carnival::Network {
 	};
 	struct SocketData {
 		ipv4_addr	InAddress{};
-		uint16_t	Port = 0;
-		uint8_t		Reliable = false;
-		uint8_t		NonBlocking = true;
+		uint16_t	InPort{};
+		uint8_t		Reliable{ false };
+		uint8_t		NonBlocking{ true };
+	};
+	struct ManagerData {
+		SocketData* pReliableSockData{ nullptr };
+		SocketData* pUnreliableSockData{ nullptr };
+		SocketData* pSnapshotSockData{ nullptr };
+		uint8_t Timeout{10};
+		uint8_t	NumberOfPeers{1}; // estimated for construction time reserve
 	};
 }

@@ -1,9 +1,8 @@
 #pragma once
 // STL
-#include <unordered_map>
 #include <string_view>
-//#include <cstdint>
 // CNM
+#include <CNM/CNMtypes.h>
 #include <CNM/Socket.h>
 
 namespace Carnival::Network {
@@ -18,33 +17,46 @@ namespace Carnival::Network {
 	constexpr uint32_t HEADER_VERSION = fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
 	
 	class NetworkManager {
+	private:
+		struct Peer {
+			ipv4_addr	addr{};
+			uint32_t	ACKField{};
+			uint16_t	port{};
+			uint16_t	lastSeen{};
+		};
+		struct PacketHeader {
+			const uint32_t PROTOCOL_VERSION = HEADER_VERSION;
+			uint32_t ACKField;
+			uint32_t SequenceNumber; // could change to 16-bit to send less data per packet
+			// alignment for this struct doesn't matter since they'll be added manually to the payload
+		};
 	public:
-		NetworkManager();
+		NetworkManager(const ManagerData& initData);
 		~NetworkManager();
 
 		NetworkManager(const NetworkManager&)				= delete;
 		NetworkManager& operator=(const NetworkManager&)	= delete;
 		NetworkManager(NetworkManager&&)					= delete;
 		NetworkManager& operator=(NetworkManager&&)			= delete;
-
-		void createSocket(uint8_t sockKey, const SocketData& initData, ipv4_addr outAddress = {});
 		
-		void sendData(uint8_t sockKey);
-		void sendData(uint8_t sockKey, ipv4_addr outAddr);
-		void recvData(uint8_t sockKey);
-	private:
-		struct SockBuffers {
-			Socket sock;
-			void* pOutBuffer = nullptr;
-			void* pInBuffer = nullptr;
-		};
-		struct PacketHeader {
-			const uint32_t PROTOCOL_VERSION = HEADER_VERSION;
-			uint32_t ACKField;
-			uint32_t SequenceNumber;
-		};
+		void pollIO();
+		void attemptConnect(ipv4_addr addr, uint16_t port);
 
 	private:
-		std::unordered_map<uint8_t, SockBuffers> m_Sockets;
+		void sendReliableData();
+		void sendUnreliableData();
+		void sendSnapshot();
+
+		void pollOnGoing();
+		void pollIncoming();
+
+		void addPeer(uint32_t peerID);
+		void removePeer(uint32_t peerID);
+	private:
+		//std::unordered_map<uint32_t, Peer> m_Peers;
+		Socket m_Socks[3]; // 0 - Reliable , 1 - High Frequency Unreliable, 2 - Snapshots
+		void* pOutBuffer{ nullptr };
+		void* pInBuffer{ nullptr };
+		uint8_t m_TimeOut{10}; // in Seconds.
 	};
 }
