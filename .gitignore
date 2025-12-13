@@ -9,5 +9,4 @@ bin-int/
 **.vcxproj.filters
 **.vcxproj.user
 
-vendor/
 Make.bat
