@@ -1,5 +1,5 @@
 #include <CNM.h>
-#include <iostream>
+#include <print>
 
 namespace cnm = Carnival::Network;
 int main() {
@@ -10,7 +10,7 @@ int main() {
 		.Reliable = false,
 		.NonBlocking = true
 	};
-
+	
 	cnm::Socket mySock{sockData};
 	mySock.openSocket();
 	mySock.bindSocket();
@@ -18,7 +18,7 @@ int main() {
 	mySock.sendPackets(msg, sizeof(msg), addr);
 	mySock.receivePackets();
 
-	std::cout << "Socket2:\n";
+	std::print("Socket2: ");
 	cnm::Socket mySock2 = std::move(mySock);
 	mySock2.openSocket();
 	mySock2.bindSocket();

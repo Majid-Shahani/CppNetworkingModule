@@ -6,8 +6,7 @@ namespace Carnival::Network {
 
 	class Socket {
 	private:
-		enum SocketStatus : uint8_t
-		{
+		enum SocketStatus : uint8_t {
 			NONE = 0,		// uninitialized or closed
 			OPEN = 1,	// handle created and valid
 			BOUND = 1 << 1,	// bound to port/address
@@ -36,7 +35,7 @@ namespace Carnival::Network {
 		// SocketData port (if 0) is overwritten after call to bindSocket
 		bool bindSocket();
 		bool sendPackets(const char* packetData, const int packetSize, const ipv4_addr outAddr, uint16_t port = 0) const;
-		bool receivePackets() const;
+		bool receivePackets() const; // TODO: should return bytes
 
 		// Status Checking
 		bool isOpen() const			{ return (m_Status & SocketStatus::OPEN); }

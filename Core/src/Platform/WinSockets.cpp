@@ -16,13 +16,14 @@ static inline void SpinPause() {}
 namespace {
 	enum class WSAState : uint8_t {UNINITIALIZED, INITIALIZING, INITIALIZED};
 	std::atomic<WSAState> winsockState{WSAState::UNINITIALIZED};
-	std::atomic<int> socketRefCount{ 0 };
+	std::atomic<uint16_t> socketRefCount{ 0 };
 
 	WORD winsockVersion = MAKEWORD(2, 2);
 	WSADATA wsaData{};
 
 	void initializeWSA() 
 	{
+		CL_CORE_ASSERT(socketRefCount.is_always_lock_free, "Atomic ref count is not lock-free.");
 		WSAState expected = WSAState::UNINITIALIZED;
 		if (winsockState.compare_exchange_strong(expected, WSAState::INITIALIZING, std::memory_order_acq_rel)) {
 			if (WSAStartup(winsockVersion, &wsaData) != 0) {
@@ -31,14 +32,9 @@ namespace {
 			winsockState.store(WSAState::INITIALIZED, std::memory_order_release);
 		}
 		else {
-			uint8_t loops = 0;
 			while (winsockState.load(std::memory_order_acquire) != WSAState::INITIALIZED) {
 				SpinPause();
-				loops++;
-				if (loops > 200) {
-					loops = 0;
-					std::this_thread::yield();
-				}
+				std::this_thread::yield();
 			}
 		}
 		// Possible issues : WSAStartup will fail and a thread will busy-wait until another thread attempt a WSAStartup
@@ -48,25 +44,22 @@ namespace {
 namespace Carnival::Network {
 	Socket::Socket(const SocketData& initData) noexcept
 	{
-		if (winsockState.load(std::memory_order_acquire) != WSAState::INITIALIZED) {
-			// multiple threads entering this will be handled down the line via compare exchange strong
+		if (socketRefCount.fetch_add(1, std::memory_order_release) == 0) {
 			initializeWSA();
 		}
-		socketRefCount.fetch_add(1, std::memory_order_release);
 
 		// Set
 		m_Status = (initData.NonBlocking? SocketStatus::NONBLOCKING : SocketStatus::NONE);
 		m_InAddress = initData.InAddress;
 		m_Port = initData.InPort;
-		//m_Type = initData.Type;
 	}
 	Socket::~Socket() noexcept 
 	{
 		if(isOpen() || isBound() || m_Handle != INVALID_SOCKET) closeSocket();
-		if (socketRefCount.fetch_sub(1, std::memory_order_acquire) == 1)
+		if (socketRefCount.fetch_sub(1, std::memory_order::acq_rel) == 1)
 		{
 			WSACleanup();
-			winsockState.store(WSAState::UNINITIALIZED, std::memory_order_release);
+			winsockState.store(WSAState::UNINITIALIZED, std::memory_order::release);
 		}
 	}
 	Socket::Socket(Socket&& other) noexcept
