@@ -49,7 +49,13 @@ namespace Carnival::Network {
 		}
 		std::print("Ref count: {}\n", socketRefCount.load(std::memory_order::acquire));
 		// Set
-		m_Status = (initData.NonBlocking? SocketStatus::NONBLOCKING : SocketStatus::NONE);
+		m_Status = initData.status;
+		m_Status = static_cast<SocketStatus> (m_Status 
+			& (~(SocketStatus::NONE 
+			| SocketStatus::OPEN 
+			| SocketStatus::ACTIVE 
+			| SocketStatus::SOCKERROR)));
+		
 		m_InAddress = initData.InAddress;
 		m_Port = initData.InPort;
 	}
@@ -113,6 +119,13 @@ namespace Carnival::Network {
 			if (ioctlsocket(m_Handle, FIONBIO, &nb) == SOCKET_ERROR)
 			{
 				std::cerr << "Failed to set Non-Blocking on Socket.\n";
+			}
+		}
+
+		if (m_Status & SocketStatus::REUSEADDR) {
+			char reuse = 1;
+			if (setsockopt(m_Handle, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) == SOCKET_ERROR) {
+				std::cerr << "Failed to set Reuse on Socket.\n";
 			}
 		}
 	}
@@ -210,19 +223,6 @@ namespace Carnival::Network {
 		}
 	}
 
-	void Socket::setNonBlocking(bool is)
-	{
-		if (m_Status & SocketStatus::NONBLOCKING) return;
-		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
-
-		m_Status = static_cast<SocketStatus>(m_Status | is << 3);
-		if (isOpen() && m_Handle != INVALID_SOCKET) {
-			bool flag = isBound();
-			closeSocket();
-			openSocket();
-			if (flag) bindSocket();
-		}
-	}
 	void Socket::setInAddress(ipv4_addr inAddr)
 	{
 		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");

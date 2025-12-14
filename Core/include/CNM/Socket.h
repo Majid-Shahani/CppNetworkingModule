@@ -5,20 +5,6 @@
 namespace Carnival::Network {
 
 	class Socket {
-	private:
-		enum SocketStatus : uint8_t {
-			NONE = 0,		// uninitialized or closed
-			OPEN = 1,	// handle created and valid
-			BOUND = 1 << 1,	// bound to port/address
-			ACTIVE = 1 << 2,	// in-use by the program
-			NONBLOCKING = 1 << 3,	// recv & send immediate return
-			/*
-			For Later Use
-			REUSEADDR	= 1 << 4,
-			BROADCAST	= 1 << 5,
-			*/
-			SOCKERROR = 1 << 7,		// socket-level error
-		};
 	public:
 		Socket(const SocketData& initData) noexcept;
 		~Socket() noexcept;
@@ -46,7 +32,6 @@ namespace Carnival::Network {
 		// Set Address & Port, calls to these will cause a reset to the socket if bound
 		void setInAddress(const ipv4_addr inAddr);
 		void setPort(const uint16_t port);
-		void setNonBlocking(bool is);
 
 		uint16_t	getPort() {
 			if (isBound()) return m_Port; 

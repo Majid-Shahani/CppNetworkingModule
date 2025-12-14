@@ -8,11 +8,11 @@ using namespace std::chrono_literals;
 
 int main() {
 	cnm::ipv4_addr addr{.addr32 = (127 << 24) | 1};
+	cnm::SocketStatus status{ cnm::SocketStatus::NONBLOCKING | cnm::SocketStatus::REUSEADDR };
 	cnm::SocketData sockData{
 		.InAddress = addr,
 		.InPort = 0,
-		.Reliable = false,
-		.NonBlocking = true
+		.status = status,
 	};
 	
 	cnm::Socket mySock{sockData};
@@ -22,27 +22,20 @@ int main() {
 	mySock.sendPackets(msg, sizeof(msg), addr);
 	mySock.receivePackets();
 
-	cnm::SocketData sockData2{
-	.InAddress = addr,
-	.InPort = 0,
-	.Reliable = false,
-	.NonBlocking = true
-	};
 	std::print("Socket2: ");
-	cnm::Socket sock2{ sockData2 };
+	cnm::Socket sock2{ sockData };
 	sock2.openSocket();
 	sock2.bindSocket();
 
 	std::jthread jt{ [&](std::stop_token st) {
 		while (!st.stop_requested()) {
-			sock2.sendPackets(msg, sizeof(msg), mySock.getAddr(), mySock.getPort() );
+			sock2.sendPackets(msg, sizeof(msg), mySock.getAddr(), mySock.getPort());
 			std::this_thread::sleep_for(10ms);
-
-		}}
-	};
+		}}};
 
 	std::this_thread::sleep_for(100ms);
-	mySock.receivePackets();
 	jt.request_stop();
+	mySock.receivePackets();
+
 	return 0;
 }
