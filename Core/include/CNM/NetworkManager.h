@@ -93,6 +93,6 @@ namespace Carnival::Network {
 		std::array<Socket, SOCKET_COUNT> m_Socks; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
 		void* pOutBuffer{ nullptr };
 		void* pInBuffer{ nullptr };
-		uint8_t m_TimeOut{10}; // in Seconds.
+		//uint8_t m_TimeOut{10}; // in Seconds.
 	};
 }

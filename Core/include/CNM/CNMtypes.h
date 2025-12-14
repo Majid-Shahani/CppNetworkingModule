@@ -17,9 +17,9 @@ namespace Carnival::Network {
 		SOCKERROR		= 1 << 7,	// socket-level error
 	};
 	union ipv4_addr {
-		uint32_t addr32{};
-		uint16_t addr16[2];
-		uint8_t addr8[4];
+		uint32_t	addr32{};
+		uint16_t	addr16[2];
+		uint8_t		addr8[4];
 	};
 	struct SocketData {
 		ipv4_addr		InAddress{};

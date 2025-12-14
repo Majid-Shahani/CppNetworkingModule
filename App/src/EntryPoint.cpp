@@ -7,6 +7,7 @@ namespace cnm = Carnival::Network;
 using namespace std::chrono_literals;
 
 int main() {
+	/*
 	cnm::ipv4_addr addr{.addr32 = (127 << 24) | 1};
 	cnm::SocketStatus status{ cnm::SocketStatus::NONBLOCKING | cnm::SocketStatus::REUSEADDR };
 	cnm::SocketData sockData{
@@ -33,6 +34,7 @@ int main() {
 	std::this_thread::sleep_for(100ms);
 	jt.request_stop();
 	mySock.receivePackets();
+	*/
 
 	return 0;
 }
