@@ -18,15 +18,12 @@ int main() {
 	cnm::Socket mySock{sockData};
 	mySock.openSocket();
 	mySock.bindSocket();
-	const char msg[] = "Hello";
-	mySock.sendPackets(msg, sizeof(msg), addr);
-	mySock.receivePackets();
 
-	std::print("Socket2: ");
 	cnm::Socket sock2{ sockData };
 	sock2.openSocket();
 	sock2.bindSocket();
 
+	const char msg[] = "Hello";
 	std::jthread jt{ [&](std::stop_token st) {
 		while (!st.stop_requested()) {
 			sock2.sendPackets(msg, sizeof(msg), mySock.getAddr(), mySock.getPort());

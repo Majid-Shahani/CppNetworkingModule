@@ -33,11 +33,11 @@ namespace Carnival::Network {
 		void setInAddress(const ipv4_addr inAddr);
 		void setPort(const uint16_t port);
 
-		uint16_t	getPort() {
+		uint16_t getPort() const {
 			if (isBound()) return m_Port; 
 			else return 0; 
 		}
-		ipv4_addr	getAddr() {
+		ipv4_addr getAddr() const {
 			if (isBound()) return m_InAddress;
 			else return ipv4_addr{}; 
 		}

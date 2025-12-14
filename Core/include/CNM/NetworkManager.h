@@ -68,7 +68,7 @@ namespace Carnival::Network {
 		};
 
 	public:
-		NetworkManager(const ManagerData& initData);
+		NetworkManager();
 		~NetworkManager();
 
 		NetworkManager(const NetworkManager&)				= delete;
