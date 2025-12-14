@@ -48,6 +48,14 @@ namespace Carnival::Network {
 		void setPort(const uint16_t port);
 		void setNonBlocking(bool is);
 
+		uint16_t	getPort() {
+			if (isBound()) return m_Port; 
+			else return 0; 
+		}
+		ipv4_addr	getAddr() {
+			if (isBound()) return m_InAddress;
+			else return ipv4_addr{}; 
+		}
 	private:
 		// Host Byte Order for Address and Port
 		uint64_t		m_Handle = ~0;

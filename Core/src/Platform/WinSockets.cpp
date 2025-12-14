@@ -47,7 +47,7 @@ namespace Carnival::Network {
 		if (socketRefCount.fetch_add(1, std::memory_order_release) == 0) {
 			initializeWSA();
 		}
-
+		std::print("Ref count: {}\n", socketRefCount.load(std::memory_order::acquire));
 		// Set
 		m_Status = (initData.NonBlocking? SocketStatus::NONBLOCKING : SocketStatus::NONE);
 		m_InAddress = initData.InAddress;
@@ -61,6 +61,7 @@ namespace Carnival::Network {
 			WSACleanup();
 			winsockState.store(WSAState::UNINITIALIZED, std::memory_order::release);
 		}
+		std::print("Ref count: {}\n", socketRefCount.load(std::memory_order::acquire));
 	}
 	Socket::Socket(Socket&& other) noexcept
 		: m_Handle{ other.m_Handle },
@@ -72,6 +73,8 @@ namespace Carnival::Network {
 		other.m_InAddress.addr32 = 0;
 		other.m_Port = 0;
 		other.m_Status = SocketStatus::NONE;
+		std::print("Ref count: {}\n", socketRefCount.fetch_add(1, std::memory_order::release));
+
 	}
 	Socket& Socket::operator=(Socket&& other) noexcept
 	{
@@ -86,6 +89,7 @@ namespace Carnival::Network {
 			other.m_InAddress.addr32 = 0;
 			other.m_Port = 0;
 			other.m_Status = SocketStatus::NONE;
+			std::print("Ref count: {}\n", socketRefCount.fetch_add(1, std::memory_order::release)); 
 		}
 		return *this;
 	}
