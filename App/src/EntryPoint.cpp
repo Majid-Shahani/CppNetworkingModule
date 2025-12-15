@@ -35,6 +35,34 @@ int main() {
 	jt.request_stop();
 	mySock.receivePackets();
 	*/
+	/*
+	* server code :
+	*   listen for connections
+	*   accept / deny
+	*   send schema
+	*   send all networked identities / snapshot
+	*   simulate
+	*   send / receive deltas
+	*   update ecs
+	*   goto simulate unless finished
+	*/
 
+	Carnival::ECS::Archetype archA{}; // Generate Archetype
+	// Archetype ID generated Automatically
+
+	Entity entt1 = archA.CreateEntity(); // Make Entities in archetype
+	// Entity ID and Network Component ID generated Automatically
+
+	/* =============================================================================
+	* client code :
+	*   request connection
+	*   wait for schema
+	*   make archetypes
+	*   fill in entities
+	*   simulate
+	*   send action deltas / receive state delta
+	*   update ecs
+	*   goto simulate until finished
+	*/
 	return 0;
 }
