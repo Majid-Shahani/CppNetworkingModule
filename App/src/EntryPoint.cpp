@@ -47,11 +47,18 @@ int main() {
 	*   goto simulate unless finished
 	*/
 
+	// Need Registery
+
 	Carnival::ECS::Archetype archA{}; // Generate Archetype
 	// Archetype ID generated Automatically
 
 	Entity entt1 = archA.CreateEntity(); // Make Entities in archetype
 	// Entity ID and Network Component ID generated Automatically
+
+	// make NetworkManager
+	// Make Network Schema
+	// Make Network Archetype ID -> ArchetypeAddress Map
+	// Make Network Entity ID map ?? Maybe a sparse Entity Array with Metadata could be made inside ECS.
 
 	/* =============================================================================
 	* client code :
