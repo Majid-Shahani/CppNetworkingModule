@@ -7,20 +7,14 @@
 
 namespace Carnival::Network {
 	// ============== ARCHETYPE ================
-	struct ArchetypeSchema {
-		uint16_t archetypeID{};
-		uint8_t numberOfComponents{ 2 };
-		uint8_t componentIDs[2];
-	};
-
 	void writeArchetypeSchema(uint16_t archetypeID, std::span<const uint8_t> components, void* outBuffer) {
 		// outbuffer.write_u16(archetypeID);
 		// out.write_u8(components.size());
 		// out.write_bytes(components.data(), components.size());
 	}
 
-	ArchetypeSchema readArchetypeSchema(void* inBuffer) {
-		ArchetypeSchema schema{};
+	ECS::NetworkArchetypeSchema readArchetypeSchema(void* inBuffer) {
+		ECS::NetworkArchetypeSchema schema{};
 		// schema.archetypeID = inBuffer.read_u16();
 		// schema.numberOfComponents = inBuffer.ready_u8();
 		// schema.componentIDs.resize(schema.numberOfComponents);
@@ -34,7 +28,13 @@ namespace Carnival::Network {
 		uint16_t Version{};
 	};
 
-	void gatherDirty(uint32_t archetypeID, std::vector<ReplicationRecord>& records) {
-		return;
+	void gatherDirty(uint32_t archetypeID, std::vector<ECS::Archetype>& registery, std::vector<ReplicationRecord>& records) {
+		auto& networks = registery[archetypeID].GetNetworks();
+		for (int i{}; i < networks.size(); i++) {
+			if (networks[i].dirty == true) {
+				records.emplace_back(networks[i].netID, archetypeID); // Version this
+				networks[i].dirty = false;
+			}
+		}
 	}
 }

@@ -34,7 +34,6 @@ namespace Carnival::ECS {
         float y{};
         float z{};
     };
-
     struct NetworkComponent {
         constexpr static uint8_t componentID = 1;
 
@@ -50,12 +49,17 @@ namespace Carnival::ECS {
         bool dirty;
     };
 
+    struct NetworkArchetypeSchema {
+        uint16_t archetypeID{};
+        uint8_t numberOfComponents{ 2 };
+        uint8_t componentIDs[2];
+    };
+
     class Archetype
     {
     public:
         Entity CreateEntity() {
             Entity e = m_Count++;
-
             m_Transforms.emplace_back();
             m_Networks.emplace_back();
 
@@ -83,11 +87,19 @@ namespace Carnival::ECS {
             }
         }
 
+        static uint16_t getArchetypeID() { return s_ArchetypeID; }
+        static NetworkArchetypeSchema getArchetypeSchema() {
+            NetworkArchetypeSchema s{
+                .archetypeID{getArchetypeID()},
+                .numberOfComponents{2},
+                .componentIDs{0, 1},
+            };
+        }
     private:
         std::vector<TransformComponent> m_Transforms;
         std::vector<NetworkComponent>   m_Networks;
 
-        inline static uint32_t m_Count{ 0 };
-        inline static uint16_t s_ArchetypeID{ generateArchetypeID() }; // seems unsafe??
+        uint32_t m_Count{ 0 };
+        inline static uint16_t s_ArchetypeID{ generateArchetypeID() }; // seems random with static initialization
     };
 }
