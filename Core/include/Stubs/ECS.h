@@ -160,8 +160,7 @@ namespace Carnival::ECS {
 		Entity addEntity() {
 			ensureCapacity(m_EntityCount + 1);
 
-			uint64_t index = m_EntityCount;
-			Entity id = EntityManager::create(this, index);
+			Entity id = EntityManager::create(this, m_EntityCount);
 			m_Entities.push_back(id);
 
 			for (auto& cc : m_Components) {
@@ -170,8 +169,6 @@ namespace Carnival::ECS {
 			}
 
 			m_EntityCount++;
-			// global map: Entity to index and archetype
-
 			return id;
 		}
 
