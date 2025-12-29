@@ -11,12 +11,10 @@ using Entity = uint32_t;
 namespace Carnival::ECS {
 
 	struct ComponentMetadata {
-		std::string componentName;
+		const char* componentName;
 
 		uint64_t componentTypeID;
 		uint64_t sizeOfComponent;
-		void* serializerFn;
-		void* deSerializerFn;
 	};
 
 	struct ComponentColumn {
@@ -27,8 +25,17 @@ namespace Carnival::ECS {
 
 	class Archetype {
 	public:
+		Archetype() {
+
+		}
+
+		auto getComponents() const{
+			std::vector<uint64_t> comps{};
+			for (const auto& comp : m_Components) comps.emplace_back(comp.pMetadata->componentTypeID);
+			return comps;
+		}
 	private:
-		const std::vector<ComponentColumn> m_Components;
+		std::vector<ComponentColumn> m_Components;
 		uint64_t m_Capacity{};
 		const uint64_t m_ArchetypeID{};
 		const uint32_t m_EntityCount{};
