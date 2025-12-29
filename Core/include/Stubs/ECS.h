@@ -6,6 +6,7 @@
 #include <string>
 #include <memory>
 #include <algorithm>
+#include <stdexcept>
 
 #include <CNM/utils.h>
 
@@ -14,13 +15,14 @@ namespace Carnival::ECS {
 
 	struct ComponentMetadata {
 		uint64_t componentTypeID;
-		uint64_t sizeOfComponent; // could be uint16_t
+		uint16_t sizeOfComponent;
+		// 6 bytes of padding
 	};
 
 	struct ComponentColumn {
-		void* pComponentData;
-		uint16_t componentHandle;
-		uint16_t stride;
+		void* pComponentData{ nullptr };
+		uint16_t componentHandle{};
+		uint16_t stride{};
 	};
 
 	// Since Indices into the Registry metadata are stored as handles,
@@ -31,6 +33,7 @@ namespace Carnival::ECS {
 		void registerComponent(const ComponentMetadata& metaData) {
 			if (canAdd(metaData)) m_MetaData.push_back(metaData);
 		}
+
 		// TODO: Add Error Returning and Proper Checks
 		uint16_t getComponentHandle(uint64_t componentTypeID) const {
 			uint16_t res{};
@@ -42,7 +45,10 @@ namespace Carnival::ECS {
 			if (handle >= m_MetaData.size()) return 0xFFFFFFFFFFFFul;
 			else return m_MetaData[handle].componentTypeID;
 		}
-
+		uint16_t getSizeOf(uint16_t handle) const {
+			if (handle >= m_MetaData.size()) return 0xFFFF;
+			else return m_MetaData[handle].sizeOfComponent;
+		}
 	private:
 		bool canAdd(const ComponentMetadata& metaData) const {
 			for (const auto& comp : m_MetaData)
@@ -60,13 +66,26 @@ namespace Carnival::ECS {
 	public:
 		static std::unique_ptr<Archetype> create(const Registry& metadataReg, 
 			const std::vector<uint64_t>& componentIDs, uint64_t initialCapacity = 5) {
-			if (!validComponentIDs(metadataReg, componentIDs)) return nullptr;
 			
+			// Copy Component ID Array
 			std::vector<uint64_t> sortedIDs(componentIDs);
+
+			// Sort ID Array canonically
 			std::sort(sortedIDs.begin(), sortedIDs.end());
+			
+			// Check for duplicate components in Entity
 			if (std::adjacent_find(sortedIDs.begin(), sortedIDs.end()) != sortedIDs.end()) return nullptr;
 
-			return std::unique_ptr<Archetype>(new Archetype(metadataReg, sortedIDs, initialCapacity));
+			// Build Component columns and validate componentIDs
+			std::vector<ComponentColumn> columns;
+			columns.reserve(sortedIDs.size());
+			for (uint64_t compID : sortedIDs) {
+				auto handle = metadataReg.getComponentHandle(compID);
+				if (handle == 0xFFFF) return nullptr;
+				columns.emplace_back(ComponentColumn(nullptr, handle, metadataReg.getSizeOf(handle)));
+			}
+
+			return std::unique_ptr<Archetype>(new Archetype(std::move(columns), sortedIDs, initialCapacity));
 		}
 
 		std::vector<uint64_t> getComponents(const Registry& componentRegistry) const{
@@ -76,10 +95,10 @@ namespace Carnival::ECS {
 		}
 
 	private:
-		Archetype(const Registry& metadataReg,
+		Archetype(std::vector<ComponentColumn>&& components,
 			const std::vector<uint64_t>& componentIDs,
 			uint64_t initialCapacity)
-			: m_ArchetypeID{ getArchetypeID(componentIDs) }, m_Capacity{ initialCapacity }
+			: m_Components{std::move(components)}, m_ArchetypeID{getArchetypeID(componentIDs)}, m_Capacity{initialCapacity}
 		{
 
 		}
@@ -95,13 +114,6 @@ namespace Carnival::ECS {
 				}
 			}
 			return hash;
-		}
-
-		static bool validComponentIDs(const Registry& reg, const std::vector<uint64_t>& componentIDs) {
-			for (const auto& id : componentIDs) {
-				if (reg.getComponentHandle(id) == 0xFFFF) return false;
-			}
-			return true;
 		}
 
 	private:
