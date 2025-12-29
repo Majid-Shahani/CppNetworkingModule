@@ -84,7 +84,18 @@ namespace Carnival::ECS {
 
 		}
 
-		static uint64_t getArchetypeID(const std::vector<uint64_t>& compIDs) { return 0; }
+		// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
+		static uint64_t getArchetypeID(const std::vector<uint64_t>& compIDs) {
+			uint64_t hash = utils::FNV64_OFFSET_BASIS;
+			for (auto id : compIDs) {
+				for (uint64_t i{}; i < 8; i++) {
+					uint8_t byte = (id >> (i * 8)) & 0xFF;
+					hash ^= byte;
+					hash *= utils::FNV64_PRIME;
+				}
+			}
+			return hash;
+		}
 
 		static bool validComponentIDs(const Registry& reg, const std::vector<uint64_t>& componentIDs) {
 			for (const auto& id : componentIDs) {
