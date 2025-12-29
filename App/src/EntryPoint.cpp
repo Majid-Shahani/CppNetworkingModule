@@ -22,11 +22,10 @@ int main() {
 	*/
 
 	// A registery
-	std::vector<ecs::Archetype> archetypeRegistery;
 	// Generate Archetype
-	uint16_t archID = archetypeRegistery.emplace_back().getArchetypeID();	// Archetype ID generated Automatically
+	// Archetype ID generated Automatically
 	// Make Entities in archetype
-	Entity entt1 = archetypeRegistery[0].CreateEntity(); // Entity ID and Network Component ID generated Automatically
+	// Entity ID and Network Component ID generated Automatically
 
 	// only pass registery reference and archetype IDs to network manager for automatic updates.
 	// the address for a reference must not change
