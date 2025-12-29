@@ -11,8 +11,6 @@ using Entity = uint32_t;
 namespace Carnival::ECS {
 
 	struct ComponentMetadata {
-		const char* componentName;
-
 		uint64_t componentTypeID;
 		uint64_t sizeOfComponent;
 	};
@@ -21,6 +19,25 @@ namespace Carnival::ECS {
 		ComponentMetadata* pMetadata;
 		void* pComponentData;
 		uint64_t stride; // = pMetadata->sizeOfComponent;
+	};
+
+	class Registry {
+	public:
+		// Registry Owns MetaData, Changes to user owned metaData will not be Canon, lifetime doesn't matter.
+		void registerComponent(const ComponentMetadata& metaData) {
+			if (canAdd(metaData)) m_MetaData.push_back(metaData);
+		}
+	private:
+		bool canAdd(const ComponentMetadata& metaData) const {
+			for (const auto& comp : m_MetaData)
+				if (comp.componentTypeID == metaData.componentTypeID) {
+					if (comp.sizeOfComponent != metaData.sizeOfComponent) throw std::runtime_error("Registry Name Hash Collision.");
+					else return false;
+				}
+			return true;
+		}
+	private:
+		std::vector<ComponentMetadata> m_MetaData;
 	};
 
 	class Archetype {
@@ -36,14 +53,9 @@ namespace Carnival::ECS {
 		}
 	private:
 		std::vector<ComponentColumn> m_Components;
+		const uint64_t m_ArchetypeID;
 		uint64_t m_Capacity{};
-		const uint64_t m_ArchetypeID{};
-		const uint32_t m_EntityCount{};
+		uint32_t m_EntityCount{};
 
-	};
-
-	class Registry {
-	private:
-		
 	};
 }
