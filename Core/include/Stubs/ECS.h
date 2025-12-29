@@ -4,6 +4,8 @@
 #include <vector>
 #include <unordered_map>
 #include <string>
+#include <memory>
+#include <algorithm>
 
 #include <CNM/utils.h>
 
@@ -56,17 +58,43 @@ namespace Carnival::ECS {
 
 	class Archetype {
 	public:
-		Archetype() {
+		static std::unique_ptr<Archetype> create(const Registry& metadataReg, 
+			const std::vector<uint64_t>& componentIDs, uint64_t initialCapacity = 5) {
+			if (!validComponentIDs(metadataReg, componentIDs)) return nullptr;
+			
+			std::vector<uint64_t> sortedIDs(componentIDs);
+			std::sort(sortedIDs.begin(), sortedIDs.end());
+			if (std::adjacent_find(sortedIDs.begin(), sortedIDs.end()) != sortedIDs.end()) return nullptr;
 
+			return std::unique_ptr<Archetype>(new Archetype(metadataReg, sortedIDs, initialCapacity));
 		}
 
-		auto getComponents() const{
+		std::vector<uint64_t> getComponents(const Registry& componentRegistry) const{
 			std::vector<uint64_t> comps{};
-			for (const auto& comp : m_Components) comps.emplace_back(comp.pMetadata->componentTypeID);
+			for (const auto& comp : m_Components) comps.emplace_back(componentRegistry.getTypeID(comp.componentHandle));
 			return comps;
 		}
+
 	private:
-		std::vector<ComponentColumn> m_Components;
+		Archetype(const Registry& metadataReg,
+			const std::vector<uint64_t>& componentIDs,
+			uint64_t initialCapacity)
+			: m_ArchetypeID{ getArchetypeID(componentIDs) }, m_Capacity{ initialCapacity }
+		{
+
+		}
+
+		static uint64_t getArchetypeID(const std::vector<uint64_t>& compIDs) { return 0; }
+
+		static bool validComponentIDs(const Registry& reg, const std::vector<uint64_t>& componentIDs) {
+			for (const auto& id : componentIDs) {
+				if (reg.getComponentHandle(id) == 0xFFFF) return false;
+			}
+			return true;
+		}
+
+	private:
+		std::vector<ComponentColumn> m_Components{};
 		const uint64_t m_ArchetypeID;
 		uint64_t m_Capacity{};
 		uint32_t m_EntityCount{};
