@@ -7,6 +7,7 @@
 #include <memory>
 #include <algorithm>
 #include <stdexcept>
+#include <span>
 
 #include <CNM/utils.h>
 
@@ -52,7 +53,7 @@ namespace Carnival::ECS {
 			s_Entries[e] = { nullptr, 0 };
 			s_FreeIDs.push_back(e);
 		}
-		static void destroyEntities(const std::vector<Entity>& e) {
+		static void destroyEntities(std::span<const Entity> e) {
 			for (const Entity entity : e) {
 				if (entity >= s_NextID) continue;
 				s_Entries[entity] = { nullptr, 0 };
@@ -75,17 +76,16 @@ namespace Carnival::ECS {
 		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
 		uint64_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
 
-		void (*constructFn)(void* dest, uint64_t numberOfElements) = nullptr; // placement-new elements, please make it noexcept
-		void (*destructFn)(void* dest, uint64_t numberOfElements) = nullptr; // destruct elements, must be noexcept
+		void (*constructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // placement-new elements
+		void (*destructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // destruct elements
 		void (*copyFn)(const void* src, void* dest, uint64_t numberOfElements) = nullptr;
 		void (*serializeFn)(const void* src, void* outBuffer) = nullptr;
 		void (*deserializeFn)(void* dest, const void* inBuffer) = nullptr;
 	};
 
 	struct ComponentColumn {
+		ComponentMetadata metadata{};
 		void* pComponentData{ nullptr };
-		uint16_t componentHandle{};
-		uint16_t stride{};
 	};
 
 	// Since Indices into the ComponentRegistry metadata are stored as handles,
@@ -97,11 +97,20 @@ namespace Carnival::ECS {
 			if (canAdd(metaData)) m_MetaData.push_back(metaData);
 		}
 
-		ComponentMetadata getMetadata(uint16_t handle) const {
-			if (handle >= m_MetaData.size()) return ComponentMetadata();
+		ComponentMetadata getMetadataByHandle(const uint16_t handle) const {
+			if (handle >= m_MetaData.size()) return ComponentMetadata{};
 			return m_MetaData[handle];
 		}
 
+		ComponentMetadata getMetadataByID(const uint64_t ComponentID) const {
+			for (const auto& meta : m_MetaData) {
+				if (meta.componentTypeID == ComponentID) {
+					ComponentMetadata res = meta;
+					return res;
+				}
+			}
+			return ComponentMetadata{};
+		}
 		// TODO: Add Error Returning and Proper Checks, Optionals instead of Sentinel values
 		uint16_t getComponentHandle(uint64_t componentTypeID) const {
 			uint16_t res{};
@@ -133,10 +142,10 @@ namespace Carnival::ECS {
 	class Archetype {
 	public:
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg, 
-			const std::vector<uint64_t>& componentIDs, uint64_t initialCapacity = 5) {
+			std::span<const uint64_t> componentIDs, uint64_t initialCapacity = 5) {
 			
 			// Copy Component ID Array
-			std::vector<uint64_t> sortedIDs(componentIDs);
+			std::vector<uint64_t> sortedIDs(componentIDs.begin(), componentIDs.end());
 
 			// Sort ID Array canonically
 			std::sort(sortedIDs.begin(), sortedIDs.end());
@@ -148,18 +157,18 @@ namespace Carnival::ECS {
 			std::vector<ComponentColumn> columns;
 			columns.reserve(sortedIDs.size());
 			for (uint64_t compID : sortedIDs) {
-				auto handle = metadataReg.getComponentHandle(compID);
-				if (handle == 0xFFFF) return nullptr;
-				columns.emplace_back(nullptr, handle, metadataReg.getSizeOf(handle));
+				auto metadata = metadataReg.getMetadataByID(compID);
+				if (metadata.componentTypeID == 0xFFFFFFFFFFFFFFFFul) return nullptr;
+				columns.emplace_back(metadata, nullptr);
 			}
 
-			return std::unique_ptr<Archetype>(new Archetype(std::move(columns), metadataReg, sortedIDs, initialCapacity));
+			return std::unique_ptr<Archetype>(new Archetype(std::move(columns), sortedIDs, initialCapacity));
 		}
 
-		std::vector<uint64_t> getComponents() const{
+		std::vector<uint64_t> getComponentIDs() const{
 			std::vector<uint64_t> comps{};
 			comps.reserve(m_Components.size());
-			for (const auto& comp : m_Components) comps.emplace_back(m_Registry.getTypeID(comp.componentHandle));
+			for (const auto& comp : m_Components) comps.emplace_back(comp.metadata.componentTypeID);
 			return comps;
 		}
 
@@ -170,8 +179,7 @@ namespace Carnival::ECS {
 			m_Entities.push_back(id);
 
 			for (auto& cc : m_Components) {
-				const auto metadata = m_Registry.getMetadata(cc.componentHandle);
-				metadata.constructFn(static_cast<uint8_t*>(cc.pComponentData) + (m_EntityCount * cc.stride), 1);
+				cc.metadata.constructFn(static_cast<uint8_t*>(cc.pComponentData) + (m_EntityCount * cc.metadata.sizeOfComponent), 1);
 			}
 
 			m_EntityCount++;
@@ -180,9 +188,8 @@ namespace Carnival::ECS {
 
 		~Archetype() noexcept {
 			for (auto& cc : m_Components) {
-				const auto meta = m_Registry.getMetadata(cc.componentHandle);
 				if (cc.pComponentData != nullptr) {
-					meta.destructFn(static_cast<uint8_t*>(cc.pComponentData), m_EntityCount);
+					cc.metadata.destructFn(static_cast<uint8_t*>(cc.pComponentData), m_EntityCount);
 					operator delete(cc.pComponentData);
 				}
 			}
@@ -190,14 +197,12 @@ namespace Carnival::ECS {
 	private:
 		// TODO: Memory Allocator so operator new doesn't throw :)
 		Archetype(std::vector<ComponentColumn>&& components,
-			const ComponentRegistry& registry,
 			const std::vector<uint64_t>& componentIDs,
 			uint64_t initialCapacity)
-			: m_Components{std::move(components)}, m_ArchetypeID{getArchetypeID(componentIDs)},
-			m_Registry{registry}, m_Capacity{initialCapacity}
+			: m_Components{std::move(components)}, m_ArchetypeID{getArchetypeID(componentIDs)}, m_Capacity{initialCapacity}
 		{
 			for (auto& c : m_Components) {
-				c.pComponentData = operator new(c.stride * m_Capacity);
+				c.pComponentData = operator new(c.metadata.sizeOfComponent * m_Capacity);
 			}
 		}
 
@@ -205,10 +210,9 @@ namespace Carnival::ECS {
 			if (newCapacity >= m_Capacity) {
 				uint64_t updatedCapacity = static_cast<uint64_t>(m_Capacity * 1.5);
 				for (auto& c : m_Components) {
-					const auto metadata = m_Registry.getMetadata(c.componentHandle);
-					void* newMem = operator new(c.stride * updatedCapacity);
-					metadata.copyFn(c.pComponentData, newMem, m_EntityCount);
-					metadata.destructFn(c.pComponentData, m_EntityCount);
+					void* newMem = operator new(c.metadata.sizeOfComponent * updatedCapacity);
+					c.metadata.copyFn(c.pComponentData, newMem, m_EntityCount);
+					c.metadata.destructFn(c.pComponentData, m_EntityCount);
 					operator delete(c.pComponentData);
 					c.pComponentData = newMem;
 				}
@@ -216,7 +220,7 @@ namespace Carnival::ECS {
 			}
 		}
 		// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
-		static uint64_t getArchetypeID(const std::vector<uint64_t>& compIDs) {
+		static uint64_t getArchetypeID(std::span<const uint64_t> compIDs) {
 			uint64_t hash = utils::FNV64_OFFSET_BASIS;
 			for (auto id : compIDs) {
 				for (uint64_t i{}; i < 8; i++) {
@@ -231,7 +235,6 @@ namespace Carnival::ECS {
 		std::vector<ComponentColumn> m_Components{};
 		std::vector<Entity> m_Entities{};
 		const uint64_t m_ArchetypeID;
-		const ComponentRegistry& m_Registry;
 		uint64_t m_Capacity{};
 		uint64_t m_EntityCount{};
 
