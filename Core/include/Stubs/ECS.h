@@ -24,7 +24,7 @@ namespace Carnival::ECS {
 	public:
 		static Entity create(Archetype* archetype, uint64_t index) {
 			if (!s_FreeIDs.empty()) {
-				Entity id = s_FreeIDs.back();
+				Entity id = s_FreeIDs[s_FreeIDs.size() - 1];
 				s_FreeIDs.pop_back();
 				s_Entries[id] = { archetype, index };
 				return id;
@@ -34,7 +34,9 @@ namespace Carnival::ECS {
 				return s_NextID++;
 			}
 		}
+		
 		static void updateEntity(Entity e, Archetype* archetype, uint64_t index) {
+			if (e >= s_NextID) return;
 			if (s_Entries[e].archetype == nullptr) {
 				auto it = std::find(s_FreeIDs.begin(), s_FreeIDs.end(), e);
 				if (it != s_FreeIDs.end()) {
@@ -44,6 +46,7 @@ namespace Carnival::ECS {
 			}
 			s_Entries[e] = { archetype, index };
 		}
+
 		static void destroyEntity(Entity e) {
 			s_Entries[e] = { nullptr, 0 };
 			s_FreeIDs.push_back(e);
@@ -83,11 +86,11 @@ namespace Carnival::ECS {
 		uint16_t stride{};
 	};
 
-	// Since Indices into the Registry metadata are stored as handles,
-	// Registry must not be cleaned mid-session, Components must not be removed mid-Session
-	class Registry {
+	// Since Indices into the ComponentRegistry metadata are stored as handles,
+	// ComponentRegistry must not be cleaned mid-session, Components must not be removed mid-Session
+	class ComponentRegistry {
 	public:
-		// Registry Owns MetaData, Changes to user owned metaData will not be Canon, lifetime doesn't matter.
+		// ComponentRegistry Owns MetaData, Changes to user owned metaData will not be Canon, lifetime doesn't matter.
 		void registerComponent(const ComponentMetadata& metaData) {
 			if (canAdd(metaData)) m_MetaData.push_back(metaData);
 		}
@@ -97,7 +100,7 @@ namespace Carnival::ECS {
 			return m_MetaData[handle];
 		}
 
-		// TODO: Add Error Returning and Proper Checks
+		// TODO: Add Error Returning and Proper Checks, Optionals instead of Sentinel values
 		uint16_t getComponentHandle(uint64_t componentTypeID) const {
 			uint16_t res{};
 			for (; res < m_MetaData.size(); res++) if (m_MetaData[res].componentTypeID == componentTypeID) break;
@@ -116,7 +119,7 @@ namespace Carnival::ECS {
 		bool canAdd(const ComponentMetadata& metaData) const {
 			for (const auto& comp : m_MetaData)
 				if (comp.componentTypeID == metaData.componentTypeID) {
-					if (comp.sizeOfComponent != metaData.sizeOfComponent) throw std::runtime_error("Registry Name Hash Collision.");
+					if (comp.sizeOfComponent != metaData.sizeOfComponent) throw std::runtime_error("ComponentRegistry Name Hash Collision.");
 					else return false;
 				}
 			return true;
@@ -127,7 +130,7 @@ namespace Carnival::ECS {
 
 	class Archetype {
 	public:
-		static std::unique_ptr<Archetype> create(const Registry& metadataReg, 
+		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg, 
 			const std::vector<uint64_t>& componentIDs, uint64_t initialCapacity = 5) {
 			
 			// Copy Component ID Array
@@ -145,7 +148,7 @@ namespace Carnival::ECS {
 			for (uint64_t compID : sortedIDs) {
 				auto handle = metadataReg.getComponentHandle(compID);
 				if (handle == 0xFFFF) return nullptr;
-				columns.emplace_back(ComponentColumn(nullptr, handle, metadataReg.getSizeOf(handle)));
+				columns.emplace_back(nullptr, handle, metadataReg.getSizeOf(handle));
 			}
 
 			return std::unique_ptr<Archetype>(new Archetype(std::move(columns), metadataReg, sortedIDs, initialCapacity));
@@ -153,6 +156,7 @@ namespace Carnival::ECS {
 
 		std::vector<uint64_t> getComponents() const{
 			std::vector<uint64_t> comps{};
+			comps.reserve(m_Components.size());
 			for (const auto& comp : m_Components) comps.emplace_back(m_Registry.getTypeID(comp.componentHandle));
 			return comps;
 		}
@@ -184,7 +188,7 @@ namespace Carnival::ECS {
 	private:
 		// TODO: Memory Allocator so operator new doesn't throw :)
 		Archetype(std::vector<ComponentColumn>&& components,
-			const Registry& registry,
+			const ComponentRegistry& registry,
 			const std::vector<uint64_t>& componentIDs,
 			uint64_t initialCapacity)
 			: m_Components{std::move(components)}, m_ArchetypeID{getArchetypeID(componentIDs)},
@@ -224,7 +228,7 @@ namespace Carnival::ECS {
 		std::vector<ComponentColumn> m_Components{};
 		std::vector<Entity> m_Entities{};
 		const uint64_t m_ArchetypeID;
-		const Registry& m_Registry;
+		const ComponentRegistry& m_Registry;
 		uint64_t m_Capacity{};
 		uint64_t m_EntityCount{};
 
