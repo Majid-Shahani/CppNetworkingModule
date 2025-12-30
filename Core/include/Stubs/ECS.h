@@ -14,49 +14,59 @@
 namespace Carnival::ECS {
 	using Entity = uint32_t;
 	
+	enum EntityStatus : uint32_t {
+		DEAD		= 0,
+		ALIVE		= 1,
+		NETWORKED	= 1 << 1,
+		DIRTY		= 1 << 2,
+		// Reserved
+	};
+
 	class Archetype;
 	struct EntityEntry {
 		Archetype* archetype;
-		uint64_t index;
+		uint32_t index;
+		EntityStatus status;
 	};
 
 	// Not Thread safe, Change
 	class EntityManager {
 	public:
-		static Entity create(Archetype* archetype, uint64_t index) {
+		static Entity create(Archetype* archetype, uint32_t index) {
 			if (!s_FreeIDs.empty()) {
 				Entity id = s_FreeIDs[s_FreeIDs.size() - 1];
 				s_FreeIDs.pop_back();
-				s_Entries[id] = { archetype, index };
+				s_Entries[id] = { archetype, index, EntityStatus::ALIVE };
 				return id;
 			}
 			else {
-				s_Entries.push_back({ archetype, index });
+				s_Entries.push_back({ archetype, index, EntityStatus::ALIVE });
 				return s_NextID++;
 			}
 		}
 		
-		static void updateEntity(Entity e, Archetype* archetype, uint64_t index) {
+		static void updateEntity(Entity e, Archetype* archetype, uint32_t index) {
 			if (e >= s_NextID) return;
-			if (s_Entries[e].archetype == nullptr) {
+			if (s_Entries[e].status == DEAD) {
 				auto it = std::find(s_FreeIDs.begin(), s_FreeIDs.end(), e);
 				if (it != s_FreeIDs.end()) {
 					std::iter_swap(it, s_FreeIDs.end() - 1);
 					s_FreeIDs.pop_back();
 				}
+				s_Entries[e].status = ALIVE;
 			}
 			s_Entries[e] = { archetype, index };
 		}
 
 		static void destroyEntity(Entity e) {
 			if (e >= s_NextID) return;
-			s_Entries[e] = { nullptr, 0 };
+			s_Entries[e] = { nullptr, 0, EntityStatus::DEAD };
 			s_FreeIDs.push_back(e);
 		}
 		static void destroyEntities(std::span<const Entity> e) {
 			for (const Entity entity : e) {
 				if (entity >= s_NextID) continue;
-				s_Entries[entity] = { nullptr, 0 };
+				s_Entries[entity] = { nullptr, 0, EntityStatus::DEAD };
 				s_FreeIDs.push_back(entity);
 			}
 		}
@@ -142,7 +152,7 @@ namespace Carnival::ECS {
 	class Archetype {
 	public:
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg, 
-			std::span<const uint64_t> componentIDs, uint64_t initialCapacity = 5) {
+			std::span<const uint64_t> componentIDs, uint32_t initialCapacity = 5) {
 			
 			// Copy Component ID Array
 			std::vector<uint64_t> sortedIDs(componentIDs.begin(), componentIDs.end());
@@ -198,7 +208,7 @@ namespace Carnival::ECS {
 		// TODO: Memory Allocator so operator new doesn't throw :)
 		Archetype(std::vector<ComponentColumn>&& components,
 			const std::vector<uint64_t>& componentIDs,
-			uint64_t initialCapacity)
+			uint32_t initialCapacity)
 			: m_Components{std::move(components)}, m_ArchetypeID{getArchetypeID(componentIDs)}, m_Capacity{initialCapacity}
 		{
 			for (auto& c : m_Components) {
@@ -206,9 +216,9 @@ namespace Carnival::ECS {
 			}
 		}
 
-		void ensureCapacity(uint64_t newCapacity) {
-			if (newCapacity >= m_Capacity) {
-				uint64_t updatedCapacity = static_cast<uint64_t>(m_Capacity * 1.5);
+		void ensureCapacity(uint32_t newCapacity) {
+			if (newCapacity > m_Capacity) {
+				uint32_t updatedCapacity = static_cast<uint32_t>(m_Capacity * 1.5);
 				for (auto& c : m_Components) {
 					void* newMem = operator new(c.metadata.sizeOfComponent * updatedCapacity);
 					c.metadata.copyFn(c.pComponentData, newMem, m_EntityCount);
@@ -235,8 +245,8 @@ namespace Carnival::ECS {
 		std::vector<ComponentColumn> m_Components{};
 		std::vector<Entity> m_Entities{};
 		const uint64_t m_ArchetypeID;
-		uint64_t m_Capacity{};
-		uint64_t m_EntityCount{};
+		uint32_t m_Capacity{};
+		uint32_t m_EntityCount{};
 
 	};
 
