@@ -48,11 +48,13 @@ namespace Carnival::ECS {
 		}
 
 		static void destroyEntity(Entity e) {
+			if (e >= s_NextID) return;
 			s_Entries[e] = { nullptr, 0 };
 			s_FreeIDs.push_back(e);
 		}
 		static void destroyEntities(const std::vector<Entity>& e) {
 			for (const Entity entity : e) {
+				if (entity >= s_NextID) continue;
 				s_Entries[entity] = { nullptr, 0 };
 				s_FreeIDs.push_back(entity);
 			}
