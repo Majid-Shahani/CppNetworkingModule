@@ -210,6 +210,7 @@ namespace Carnival::ECS {
 					metadata.copyFn(c.pComponentData, newMem, m_EntityCount);
 					metadata.destructFn(c.pComponentData, m_EntityCount);
 					operator delete(c.pComponentData);
+					c.pComponentData = newMem;
 				}
 				m_Capacity = updatedCapacity;
 			}
