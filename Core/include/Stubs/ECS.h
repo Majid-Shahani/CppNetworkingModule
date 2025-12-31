@@ -10,6 +10,7 @@
 #include <span>
 
 #include <CNM/utils.h>
+#include <CNM/macros.h> // To be moved to translation file later
 
 namespace Carnival::ECS {
 
@@ -19,6 +20,8 @@ namespace Carnival::ECS {
 
 		void (*constructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // placement-new elements
 		void (*destructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // destruct elements
+		// Construct Before copy in case of moving around? Copy function could cast and field by field copy,
+		// or memcpy if memory is packed properly. first case seems safer, but construction before copy becomes a requirement
 		void (*copyFn)(const void* src, void* dest, uint64_t numberOfElements) = nullptr;
 		void (*serializeFn)(const void* src, void* outBuffer) = nullptr;
 		void (*deserializeFn)(void* dest, const void* inBuffer) = nullptr;
@@ -32,10 +35,10 @@ namespace Carnival::ECS {
 	using Entity = uint32_t;
 
 	enum EntityStatus : uint32_t {
-		DEAD = 0,
-		ALIVE = 1,
-		NETWORKED = 1 << 1,
-		DIRTY = 1 << 2,
+		DEAD		= 0,
+		ALIVE		= 1 << 0,
+		NETWORKED	= 1 << 1,
+		DIRTY		= 1 << 2,
 		// Reserved
 	};
 
@@ -55,20 +58,19 @@ namespace Carnival::ECS {
 	// Not Thread safe, Change
 	class EntityManager {
 	public:
-		static Entity create(Archetype* archetype, uint32_t index) {
+		static Entity create(Archetype* archetype, uint32_t index, EntityStatus status) {
+			status = static_cast<EntityStatus>(status | ALIVE);
 			if (!s_FreeIDs.empty()) {
 				Entity id = s_FreeIDs[s_FreeIDs.size() - 1];
 				s_FreeIDs.pop_back();
-				s_Entries[id] = { archetype, index, EntityStatus::ALIVE };
+				s_Entries[id] = { archetype, index, status };
 				return id;
 			}
-			else {
-				s_Entries.push_back({ archetype, index, EntityStatus::ALIVE });
-				return s_NextID++;
-			}
+			s_Entries.push_back({ archetype, index, status });
+			return s_NextID++;
 		}
 		
-		static void updateEntity(Entity e, Archetype* archetype, uint32_t index) {
+		static void updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status) {
 			if (e >= s_NextID) return;
 			if (s_Entries[e].status == DEAD) {
 				auto it = std::find(s_FreeIDs.begin(), s_FreeIDs.end(), e);
@@ -76,9 +78,15 @@ namespace Carnival::ECS {
 					std::iter_swap(it, s_FreeIDs.end() - 1);
 					s_FreeIDs.pop_back();
 				}
-				s_Entries[e].status = ALIVE;
 			}
-			s_Entries[e] = { archetype, index };
+			status = static_cast<EntityStatus>(status | ALIVE);
+			s_Entries[e] = { archetype, index, status };
+		}
+
+		static void updateEntityLocation(Entity e, Archetype* archetype, uint32_t index) {
+			if (e >= s_NextID) return;
+			s_Entries[e].archetype = archetype;
+			s_Entries[e].index = index;
 		}
 
 		static void destroyEntity(Entity e) {
@@ -189,19 +197,38 @@ namespace Carnival::ECS {
 			return comps;
 		}
 
-		Entity addEntity() {
+		uint32_t addEntity(Entity id) {
 			ensureCapacity(m_EntityCount + 1);
 
-			Entity id = EntityManager::create(this, m_EntityCount);
 			m_Entities.push_back(id);
-
 			for (auto& cc : m_Components) {
 				cc.metadata.constructFn(static_cast<uint8_t*>(cc.pComponentData) + (m_EntityCount * cc.metadata.sizeOfComponent), 1);
 			}
-
-			m_EntityCount++;
-			return id;
+			return m_EntityCount++;
 		}
+		uint32_t addEntity(Entity id, const Archetype& src, uint32_t srcIndex) {
+			ensureCapacity(m_EntityCount + 1);
+
+			m_Entities.push_back(id);
+			for (auto& dstC : m_Components) {
+				bool isInSrc{ false };
+				for (auto& srcC : src.m_Components) {
+					if (dstC.metadata.componentTypeID == srcC.metadata.componentTypeID) {
+						CL_CORE_ASSERT(dstC.metadata.sizeOfComponent == srcC.metadata.sizeOfComponent, "Size of Component mismatch across archetypes.\n");
+						dstC.metadata.copyFn(static_cast<uint8_t*>(srcC.pComponentData) + (srcIndex * dstC.metadata.sizeOfComponent),
+							static_cast<uint8_t*>(dstC.pComponentData) + (m_EntityCount * dstC.metadata.sizeOfComponent), 1);
+						isInSrc = true;
+						break;
+					}
+				}
+				if (!isInSrc)
+					dstC.metadata.constructFn(
+						static_cast<uint8_t*>(dstC.pComponentData) + (m_EntityCount * dstC.metadata.sizeOfComponent),
+						1);
+			}
+			return m_EntityCount++;
+		}
+
 		void removeEntity(Entity entity) {
 			for (uint32_t i{}; i < m_EntityCount; i++) {
 				if (m_Entities[i] == entity) {
@@ -235,7 +262,7 @@ namespace Carnival::ECS {
 			// Update Entity Registry
 			m_Entities[index] = m_Entities[m_EntityCount - 1];
 			m_Entities.pop_back();
-			EntityManager::updateEntity(m_Entities[index], this, index);
+			EntityManager::updateEntityLocation(m_Entities[index], this, index);
 
 			m_EntityCount--;
 		}
