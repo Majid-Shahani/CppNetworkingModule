@@ -47,7 +47,9 @@ namespace Carnival::ECS {
 	};
 
 	struct EntityData {
-
+		uint64_t numberOfComponents{};
+		uint16_t* sizeOfComponents{nullptr};
+		uint8_t* data{nullptr};
 	};
 
 	// Not Thread safe, Change
@@ -203,22 +205,47 @@ namespace Carnival::ECS {
 		void removeEntity(Entity entity) {
 			for (uint32_t i{}; i < m_EntityCount; i++) {
 				if (m_Entities[i] == entity) {
-					removeEntityAt(i);
-					return;
+					if (i == m_EntityCount - 1) {
+						removeLastEntity();
+						return;
+					}
+					else {
+						removeEntityAt(i);
+						return;
+					}
 				}
 			}
 		}
 		void removeEntityAt(uint32_t index) {
+			if (m_EntityCount == 0 || index >= m_EntityCount) return;
+			// Swap and Destruct Components
+			if (index == m_EntityCount - 1) {
+				removeLastEntity();
+				return;
+			}
+
 			for (auto& c : m_Components) {
 				c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + (index * c.metadata.sizeOfComponent), 1);
-				c.metadata.copyFn(static_cast<uint8_t*>(c.pComponentData) + (c.metadata.sizeOfComponent * m_EntityCount),
+				c.metadata.copyFn(static_cast<uint8_t*>(c.pComponentData) + (c.metadata.sizeOfComponent * (m_EntityCount - 1)),
 					static_cast<uint8_t*>(c.pComponentData) + (index * c.metadata.sizeOfComponent),
 					1);
-				c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + (m_EntityCount * c.metadata.sizeOfComponent), 1);
+				c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent), 1);
 			}
+
+			// Update Entity Registry
+			m_Entities[index] = m_Entities[m_EntityCount - 1];
+			m_Entities.pop_back();
+			EntityManager::updateEntity(m_Entities[index], this, index);
+
 			m_EntityCount--;
 		}
-		
+		void removeLastEntity() {
+			for (auto& c : m_Components) {
+				c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent), 1);
+			}
+			m_Entities.pop_back();
+			m_EntityCount--;
+		}
 		// TODO: Get Entity Function
 
 
@@ -244,7 +271,7 @@ namespace Carnival::ECS {
 
 		void ensureCapacity(uint32_t newCapacity) {
 			if (newCapacity > m_Capacity) {
-				uint32_t updatedCapacity = static_cast<uint32_t>(m_Capacity * 1.5);
+				uint32_t updatedCapacity = static_cast<uint32_t>((m_Capacity + 1) * 1.5);
 				for (auto& c : m_Components) {
 					void* newMem = operator new(c.metadata.sizeOfComponent * updatedCapacity);
 					c.metadata.copyFn(c.pComponentData, newMem, m_EntityCount);
