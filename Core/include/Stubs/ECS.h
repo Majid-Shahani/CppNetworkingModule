@@ -1,37 +1,20 @@
 #pragma once
 
+#include <concepts>
 #include <cstdint>
 #include <vector>
 #include <span>
 #include <memory>
 
 namespace Carnival::ECS {
-
-	struct ComponentMetadata {
-		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
-		uint64_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
-
-		void (*constructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // placement-new elements
-		void (*destructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // destruct elements
-		// Construct Before copy in case of moving around? Copy function could cast and field by field copy,
-		// or memcpy if memory is packed properly. first case seems safer, but construction before copy becomes a requirement
-		void (*copyFn)(const void* src, void* dest, uint64_t numberOfElements) = nullptr;
-		void (*serializeFn)(const void* src, void* outBuffer) = nullptr;
-		void (*deserializeFn)(void* dest, const void* inBuffer) = nullptr;
-	};
-
-	struct ComponentColumn {
-		ComponentMetadata metadata{};
-		void* pComponentData{ nullptr };
-	};
-
 	using Entity = uint32_t;
 
 	enum EntityStatus : uint32_t {
 		DEAD		= 0,
 		ALIVE		= 1 << 0,
-		NETWORKED	= 1 << 1,
-		DIRTY		= 1 << 2,
+		NET_UPD		= 1 << 1,
+		NET_TICK	= 1 << 2,
+		DIRTY		= 1 << 3,
 		// Reserved
 	};
 
@@ -69,18 +52,63 @@ namespace Carnival::ECS {
 		EntityManager() = default;
 		static inline std::vector<Entity> s_FreeIDs{};
 		static inline std::vector<EntityEntry> s_Entries{};
-		static inline Entity s_NextID{ 1 };
+		static inline Entity s_NextID{};
 	};
 
-	// Since Indices into the ComponentRegistry metadata are stored as handles,
+	struct ComponentMetadata {
+		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
+		uint64_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
+
+		using ConstructFn	= void (*)(void* dest, uint64_t count) noexcept;
+		using DestructFn	= void (*)(void* dest, uint64_t count) noexcept;
+		using CopyFn		= void (*)(const void* src, void* dest, uint64_t count);
+		using SerializeFn	= void (*)(const void* src, void* outBuffer);
+		using DeserializeFn = void (*)(void* dest, const void* inBuffer);
+
+		ConstructFn		constructFn		= nullptr; // placement-new elements
+		DestructFn		destructFn		= nullptr; // destruct elements
+		CopyFn			copyFn			= nullptr;
+		SerializeFn		serializeFn		= nullptr;
+		DeserializeFn	deserializeFn	= nullptr;
+	};
+
+	struct ComponentColumn {
+		ComponentMetadata metadata{};
+		void* pComponentData{ nullptr };
+	};
+
+	template<typename T>
+	concept ECSComponent =
+		requires { { T::ID } -> std::same_as<const uint64_t&>; }
+		&& std::same_as<decltype(&T::construct),	ComponentMetadata::ConstructFn>
+		&& std::same_as<decltype(&T::destruct),		ComponentMetadata::DestructFn>
+		&& std::same_as<decltype(&T::copy),			ComponentMetadata::CopyFn>
+		&& std::same_as<decltype(&T::serialize),	ComponentMetadata::SerializeFn>
+		&& std::same_as<decltype(&T::deserialize),	ComponentMetadata::DeserializeFn>;
+
 	// ComponentRegistry must not be cleaned mid-session, Components must not be removed mid-Session
 	class ComponentRegistry {
 	public:
-		// ComponentRegistry Owns MetaData, Changes to user owned metaData will not be Canon, lifetime doesn't matter.
+		// TODO: RULE OF 5!
+		ComponentRegistry() = default;
+
+		template<ECSComponent T>
+		void registerComponent() {
+			ComponentMetadata meta{
+				.componentTypeID	= T::ID,
+				.sizeOfComponent	= sizeof(T),
+				.constructFn		= &T::construct,
+				.destructFn			= &T::destruct,
+				.copyFn				= &T::copy,
+				.serializeFn		= &T::serialize,
+				.deserializeFn		= &T::deserialize,
+			};
+			registerComponent(meta);
+		}
+
 		void registerComponent(const ComponentMetadata& metaData);
 
 		ComponentMetadata getMetadataByHandle(const uint16_t handle) const;
-
 		ComponentMetadata getMetadataByID(const uint64_t ComponentID) const;
 		// TODO: Add Error Returning and Proper Checks, Optionals instead of Sentinel values
 		uint16_t getComponentHandle(uint64_t componentTypeID) const;
@@ -95,6 +123,8 @@ namespace Carnival::ECS {
 
 	class Archetype {
 	public:
+		// TODO: RULE OF 5!
+
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg, 
 			std::span<const uint64_t> componentIDs, uint32_t initialCapacity = 5);
 
@@ -107,7 +137,14 @@ namespace Carnival::ECS {
 		void removeEntityAt(uint32_t index);
 		void removeLastEntity();
 
-		// TODO: Get Entity Function
+		inline uint32_t getEntityCount() const { return m_EntityCount; }
+		inline Entity	getEntity(uint32_t index) const { return m_Entities[index]; }
+		inline void*	getComponentData(uint64_t cID) { 
+			for (auto& c : m_Components) 
+				if (c.metadata.componentTypeID == cID) 
+					return c.pComponentData;
+			return nullptr;
+		}
 
 		~Archetype() noexcept;
 	private:

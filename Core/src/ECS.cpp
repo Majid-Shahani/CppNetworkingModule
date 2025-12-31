@@ -30,7 +30,7 @@ namespace Carnival::ECS {
 	bool EntityManager::markDirty(Entity e) {
 		if (e >= s_NextID) return false;
 		if (s_Entries[e].status == DEAD
-			|| !(s_Entries[e].status & NETWORKED)
+			|| !(s_Entries[e].status & NET_UPD)
 			|| (s_Entries[e].status & DIRTY))
 			return false;
 		s_Entries[e].status = static_cast<EntityStatus>(s_Entries[e].status | DIRTY);
@@ -77,20 +77,20 @@ namespace Carnival::ECS {
 		s_NextID = 1;
 	}
 
-	// ================================================================================================== //
-	// ================================== Component Registry =========================================== //
+	// ================================================================================================ //
+	// ================================== Component Registry ========================================== //
 	// ================================================================================================ //
 
 	// ComponentRegistry Owns MetaData, Changes to user owned metaData will not be Canon, lifetime doesn't matter.
-	inline void ComponentRegistry::registerComponent(const ComponentMetadata& metaData) {
+	void ComponentRegistry::registerComponent(const ComponentMetadata& metaData) {
 		if (canAdd(metaData)) m_MetaData.push_back(metaData);
 	}
-	inline ComponentMetadata ComponentRegistry::getMetadataByHandle(const uint16_t handle) const {
+
+	ComponentMetadata ComponentRegistry::getMetadataByHandle(const uint16_t handle) const {
 		if (handle >= m_MetaData.size()) return ComponentMetadata{};
 		return m_MetaData[handle];
 	}
-
-	inline ComponentMetadata ComponentRegistry::getMetadataByID(const uint64_t ComponentID) const {
+	ComponentMetadata ComponentRegistry::getMetadataByID(const uint64_t ComponentID) const {
 		for (const auto& meta : m_MetaData) {
 			if (meta.componentTypeID == ComponentID) {
 				ComponentMetadata res = meta;
@@ -101,21 +101,21 @@ namespace Carnival::ECS {
 	}
 
 	// TODO: Add Error Returning and Proper Checks, Optionals instead of Sentinel values
-	inline uint16_t ComponentRegistry::getComponentHandle(uint64_t componentTypeID) const {
+	uint16_t ComponentRegistry::getComponentHandle(uint64_t componentTypeID) const {
 		uint16_t res{};
 		for (; res < m_MetaData.size(); res++) if (m_MetaData[res].componentTypeID == componentTypeID) break;
 		return (res == m_MetaData.size() ? 0xFFFF : res);
 	}
-	inline uint64_t ComponentRegistry::getTypeID(uint16_t handle) const {
+	uint64_t ComponentRegistry::getTypeID(uint16_t handle) const {
 		if (handle >= m_MetaData.size()) return 0xFFFFFFFFFFFFul;
 		else return m_MetaData[handle].componentTypeID;
 	}
-	inline uint16_t ComponentRegistry::getSizeOf(uint16_t handle) const {
+	uint16_t ComponentRegistry::getSizeOf(uint16_t handle) const {
 		if (handle >= m_MetaData.size()) return 0xFFFF;
 		else return static_cast<uint16_t>(m_MetaData[handle].sizeOfComponent);
 	}
 
-	inline bool ComponentRegistry::canAdd(const ComponentMetadata& metaData) const {
+	bool ComponentRegistry::canAdd(const ComponentMetadata& metaData) const {
 		for (const auto& comp : m_MetaData)
 			if (comp.componentTypeID == metaData.componentTypeID) {
 				if (comp.sizeOfComponent != metaData.sizeOfComponent) throw std::runtime_error("ComponentRegistry Name Hash Collision.");
@@ -124,9 +124,9 @@ namespace Carnival::ECS {
 		return true;
 	}
 
-	// ================================================================================================== //
-	// ================================== Component Registry ============================================ //
-	// ================================================================================================== //
+	// ================================================================================================ //
+	// ======================================= Archetype ============================================== //
+	// ================================================================================================ //
 
 	
 	std::unique_ptr<Archetype> Archetype::create(
@@ -155,14 +155,14 @@ namespace Carnival::ECS {
 		return std::unique_ptr<Archetype>(new Archetype(std::move(columns), sortedIDs, initialCapacity));
 	}
 
-	inline std::vector<uint64_t> Archetype::getComponentIDs() const {
+	std::vector<uint64_t> Archetype::getComponentIDs() const {
 		std::vector<uint64_t> comps{};
 		comps.reserve(m_Components.size());
 		for (const auto& comp : m_Components) comps.emplace_back(comp.metadata.componentTypeID);
 		return comps;
 	}
 
-	inline uint32_t Archetype::addEntity(Entity id) {
+	uint32_t Archetype::addEntity(Entity id) {
 		ensureCapacity(m_EntityCount + 1);
 
 		m_Entities.push_back(id);
@@ -194,7 +194,7 @@ namespace Carnival::ECS {
 		return m_EntityCount++;
 	}
 
-	inline void Archetype::removeEntity(Entity entity) {
+	void Archetype::removeEntity(Entity entity) {
 		for (uint32_t i{}; i < m_EntityCount; i++) {
 			if (m_Entities[i] == entity) {
 				if (i == m_EntityCount - 1) {
@@ -208,7 +208,7 @@ namespace Carnival::ECS {
 			}
 		}
 	}
-	inline void Archetype::removeEntityAt(uint32_t index) {
+	void Archetype::removeEntityAt(uint32_t index) {
 		if (m_EntityCount == 0 || index >= m_EntityCount) return;
 		// Swap and Destruct Components
 		if (index == m_EntityCount - 1) {
@@ -231,7 +231,7 @@ namespace Carnival::ECS {
 
 		m_EntityCount--;
 	}
-	inline void Archetype::removeLastEntity() {
+	void Archetype::removeLastEntity() {
 		for (auto& c : m_Components) {
 			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent), 1);
 		}
@@ -257,7 +257,7 @@ namespace Carnival::ECS {
 		}
 	}
 
-	inline void Archetype::ensureCapacity(uint32_t newCapacity) {
+	void Archetype::ensureCapacity(uint32_t newCapacity) {
 		if (newCapacity > m_Capacity) {
 			uint32_t updatedCapacity = static_cast<uint32_t>((m_Capacity + 1) * 1.5);
 			for (auto& c : m_Components) {
@@ -272,7 +272,7 @@ namespace Carnival::ECS {
 	}
 
 	// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
-	inline uint64_t Archetype::getArchetypeID(std::span<const uint64_t> compIDs) {
+	uint64_t Archetype::getArchetypeID(std::span<const uint64_t> compIDs) {
 		uint64_t hash = utils::FNV64_OFFSET_BASIS;
 		for (auto id : compIDs) {
 			for (uint64_t i{}; i < 8; i++) {

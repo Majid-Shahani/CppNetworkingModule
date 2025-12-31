@@ -4,9 +4,90 @@
 #include <thread>
 #include <chrono>
 
-namespace cnm = Carnival::Network;
-namespace ecs = Carnival::ECS;
+using namespace Carnival::utils;
+using namespace Carnival::Network;
+using namespace Carnival::ECS;
 using namespace std::chrono_literals;
+
+struct Position {
+	float x, y, z;
+
+	static constexpr uint64_t ID{ fnv1a64("PositionComponent") };
+	static void construct(void* dest, uint64_t count) noexcept {
+		auto* p = static_cast<Position*>(dest);
+		for (uint64_t i{}; i < count; i++)
+			p[i] = { 0.f, 0.f, 0.f };
+	}
+	static void destruct(void*, uint64_t) noexcept {
+		// trivial
+	}
+	static void copy(const void* src, void* dest, uint64_t count) {
+		memcpy(dest, src, sizeof(Position) * count);
+	}
+	static void serialize(const void* src, void* out) {
+		std::memcpy(out, src, sizeof(Position));
+	}
+	static void deserialize(void* dest, const void* in) {
+		std::memcpy(dest, in, sizeof(Position));
+	}
+};
+struct OnTickNetworkComponent {
+	uint32_t networkID{};
+
+	static constexpr uint64_t ID{ fnv1a64("OnTickNetworkComponent") };
+	static void construct(void* dest, uint64_t count) noexcept {
+		auto* p = static_cast<OnTickNetworkComponent*>(dest);
+		for (uint64_t i{}; i < count; i++) {
+			p[i].networkID = 0; // Get next networkID maybe
+		}
+	}
+	static void destruct(void* dest, uint64_t count) noexcept {
+		// Free Network IDs
+	}
+	static void copy(const void* src, void* dest, uint64_t count) {
+		memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
+	}
+	static void serialize(const void* src, void* out) {
+		// static_cast<buffer*>(out)->put_uint32(static_cast<const OnTickNetworkComponent*>(src)->networkID);
+	}
+	static void deserialize(void* dest, const void* in) {
+		// static_cast<OnTickNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
+	}
+};
+struct OnUpdateNetworkComponent {
+	uint32_t networkID{};
+
+	static constexpr uint64_t ID{ fnv1a64("OnUpdateNetworkComponent") };
+	static void construct(void* dest, uint64_t count) noexcept {
+		auto* p = static_cast<OnUpdateNetworkComponent*>(dest);
+		for (uint64_t i{}; i < count; i++) {
+			p[i].networkID = 0; // Get next networkID maybe
+		}
+	}
+	static void destruct(void* dest, uint64_t count) noexcept {
+		// Free Network IDs
+	}
+	static void copy(const void* src, void* dest, uint64_t count) {
+		memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
+	}
+	static void serialize(const void* src, void* out) {
+		// static_cast<buffer*>(out)->put_uint32(static_cast<const OnUpdateNetworkComponent*>(src)->networkID);
+	}
+	static void deserialize(void* dest, const void* in) {
+		// static_cast<OnUpdateNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
+	}
+};
+
+void PositionMoverSystem(Archetype& arch, float delta) {
+	Position* pos = static_cast<Position*>(arch.getComponentData(Position::ID));
+	uint32_t count = arch.getEntityCount();
+
+	for (uint32_t i{}; i < count; i++) {
+		pos[i].x += delta;
+		if (EntityManager::markDirty(arch.getEntity(i)))
+			; // Submit Replication Record
+	}
+}
 
 int main() {
 	/*
@@ -21,21 +102,27 @@ int main() {
 	*   goto simulate unless finished
 	*/
 
-	// A registery
-	// Generate Archetype
-	// Archetype ID generated Automatically
-	// Make Entities in archetype
-	// Entity ID and Network Component ID generated Automatically
+	ComponentRegistry reg{};
+	reg.registerComponent<Position>();
+	reg.registerComponent<OnTickNetworkComponent>();
+	reg.registerComponent<OnUpdateNetworkComponent>();
 
-	// only pass registery reference and archetype IDs to network manager for automatic updates.
-	// the address for a reference must not change
+	auto arch = Archetype::create(reg,
+		std::span<const uint64_t>{
+		std::array<uint64_t, 2> {Position::ID, OnUpdateNetworkComponent::ID}},
+		8);
+	if (!arch) throw std::runtime_error("Failed to Create Archetype");
 
-	// make NetworkManager
-	// Make Network Schema
-	// Make Network Archetype ID -> ArchetypeAddress Map
-	// Make Network Entity ID map ?? Maybe a sparse Entity Array with Metadata could be made inside ECS.
+	Entity e = EntityManager::create(arch.get(), 0, static_cast<EntityStatus>(ALIVE | NET_UPD));
+	uint32_t index = arch->addEntity(e);
+	EntityManager::updateEntityLocation(e, arch.get(), index);
+	
+	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked 
 
-	/* =============================================================================
+	PositionMoverSystem(*arch, 1.0f);
+
+
+	/*
 	* client code :
 	*   request connection
 	*   wait for schema
@@ -46,5 +133,6 @@ int main() {
 	*   update ecs
 	*   goto simulate until finished
 	*/
+
 	return 0;
 }
