@@ -12,13 +12,30 @@
 #include <CNM/utils.h>
 
 namespace Carnival::ECS {
+
+	struct ComponentMetadata {
+		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
+		uint64_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
+
+		void (*constructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // placement-new elements
+		void (*destructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // destruct elements
+		void (*copyFn)(const void* src, void* dest, uint64_t numberOfElements) = nullptr;
+		void (*serializeFn)(const void* src, void* outBuffer) = nullptr;
+		void (*deserializeFn)(void* dest, const void* inBuffer) = nullptr;
+	};
+
+	struct ComponentColumn {
+		ComponentMetadata metadata{};
+		void* pComponentData{ nullptr };
+	};
+
 	using Entity = uint32_t;
-	
+
 	enum EntityStatus : uint32_t {
-		DEAD		= 0,
-		ALIVE		= 1,
-		NETWORKED	= 1 << 1,
-		DIRTY		= 1 << 2,
+		DEAD = 0,
+		ALIVE = 1,
+		NETWORKED = 1 << 1,
+		DIRTY = 1 << 2,
 		// Reserved
 	};
 
@@ -27,6 +44,10 @@ namespace Carnival::ECS {
 		Archetype* archetype;
 		uint32_t index;
 		EntityStatus status;
+	};
+
+	struct EntityData {
+
 	};
 
 	// Not Thread safe, Change
@@ -80,22 +101,6 @@ namespace Carnival::ECS {
 		static inline std::vector<Entity> s_FreeIDs{};
 		static inline std::vector<EntityEntry> s_Entries{};
 		static inline Entity s_NextID{ 1 };
-	};
-
-	struct ComponentMetadata {
-		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
-		uint64_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
-
-		void (*constructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // placement-new elements
-		void (*destructFn)(void* dest, uint64_t numberOfElements) noexcept = nullptr; // destruct elements
-		void (*copyFn)(const void* src, void* dest, uint64_t numberOfElements) = nullptr;
-		void (*serializeFn)(const void* src, void* outBuffer) = nullptr;
-		void (*deserializeFn)(void* dest, const void* inBuffer) = nullptr;
-	};
-
-	struct ComponentColumn {
-		ComponentMetadata metadata{};
-		void* pComponentData{ nullptr };
 	};
 
 	// Since Indices into the ComponentRegistry metadata are stored as handles,
@@ -195,6 +200,27 @@ namespace Carnival::ECS {
 			m_EntityCount++;
 			return id;
 		}
+		void removeEntity(Entity entity) {
+			for (uint32_t i{}; i < m_EntityCount; i++) {
+				if (m_Entities[i] == entity) {
+					removeEntityAt(i);
+					return;
+				}
+			}
+		}
+		void removeEntityAt(uint32_t index) {
+			for (auto& c : m_Components) {
+				c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + (index * c.metadata.sizeOfComponent), 1);
+				c.metadata.copyFn(static_cast<uint8_t*>(c.pComponentData) + (c.metadata.sizeOfComponent * m_EntityCount),
+					static_cast<uint8_t*>(c.pComponentData) + (index * c.metadata.sizeOfComponent),
+					1);
+				c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + (m_EntityCount * c.metadata.sizeOfComponent), 1);
+			}
+			m_EntityCount--;
+		}
+		
+		// TODO: Get Entity Function
+
 
 		~Archetype() noexcept {
 			for (auto& cc : m_Components) {
