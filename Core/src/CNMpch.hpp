@@ -1,6 +1,7 @@
 #pragma once
 
 // STANDARD LIBRARY
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -10,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
+#include <span>
 #include <string>
 #include <stdexcept>
 #include <vector>
