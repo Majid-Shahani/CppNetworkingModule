@@ -49,6 +49,7 @@ namespace Carnival::ECS {
 		EntityStatus status;
 	};
 
+	// Unused
 	struct EntityData {
 		uint64_t numberOfComponents{};
 		uint16_t* sizeOfComponents{nullptr};
@@ -70,6 +71,20 @@ namespace Carnival::ECS {
 			return s_NextID++;
 		}
 		
+		static bool markDirty(Entity e) {
+			if (e >= s_NextID) return false;
+			if (s_Entries[e].status == DEAD
+				|| !(s_Entries[e].status & NETWORKED) 
+				|| (s_Entries[e].status & DIRTY)) 
+				return false;
+			s_Entries[e].status = static_cast<EntityStatus>(s_Entries[e].status | DIRTY);
+			return true;
+		}
+		static void clearDirty(Entity e) {
+			if (e >= s_NextID) return;
+			s_Entries[e].status = static_cast<EntityStatus>(s_Entries[e].status & ~DIRTY);
+		}
+
 		static void updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status) {
 			if (e >= s_NextID) return;
 			if (s_Entries[e].status == DEAD) {
@@ -82,7 +97,6 @@ namespace Carnival::ECS {
 			status = static_cast<EntityStatus>(status | ALIVE);
 			s_Entries[e] = { archetype, index, status };
 		}
-
 		static void updateEntityLocation(Entity e, Archetype* archetype, uint32_t index) {
 			if (e >= s_NextID) return;
 			s_Entries[e].archetype = archetype;
@@ -273,8 +287,8 @@ namespace Carnival::ECS {
 			m_Entities.pop_back();
 			m_EntityCount--;
 		}
-		// TODO: Get Entity Function
 
+		// TODO: Get Entity Function
 
 		~Archetype() noexcept {
 			for (auto& cc : m_Components) {
