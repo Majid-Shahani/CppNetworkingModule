@@ -12,9 +12,6 @@ namespace Carnival::ECS {
 	enum EntityStatus : uint32_t {
 		DEAD		= 0,
 		ALIVE		= 1 << 0,
-		NET_UPD		= 1 << 1,
-		NET_TICK	= 1 << 2,
-		DIRTY		= 1 << 3,
 		// Reserved
 	};
 
@@ -39,9 +36,6 @@ namespace Carnival::ECS {
 		
 		static const EntityEntry& get(Entity e);
 
-		static bool markDirty(Entity e);
-		static void clearDirty(Entity e);
-
 		static void updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status);
 		static void updateEntityLocation(Entity e, Archetype* archetype, uint32_t index);
 
@@ -59,11 +53,11 @@ namespace Carnival::ECS {
 		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
 		uint64_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
 
-		using ConstructFn	= void (*)(void* dest, uint64_t count) noexcept;
-		using DestructFn	= void (*)(void* dest, uint64_t count) noexcept;
-		using CopyFn		= void (*)(const void* src, void* dest, uint64_t count);
-		using SerializeFn	= void (*)(const void* src, void* outBuffer);
-		using DeserializeFn = void (*)(void* dest, const void* inBuffer);
+		using ConstructFn	= void (*)(void* dest, uint32_t count) noexcept;
+		using DestructFn	= void (*)(void* dest, uint32_t count) noexcept;
+		using CopyFn		= void (*)(const void* src, void* dest, uint32_t count);
+		using SerializeFn	= void (*)(const void* src, void* outBuffer, uint32_t count);
+		using DeserializeFn = void (*)(void* dest, const void* inBuffer, uint32_t count);
 
 		ConstructFn		constructFn		= nullptr; // placement-new elements
 		DestructFn		destructFn		= nullptr; // destruct elements
@@ -77,6 +71,7 @@ namespace Carnival::ECS {
 		void* pComponentData{ nullptr };
 	};
 
+	// Highly Preferred to be packed and POD
 	template<typename T>
 	concept ECSComponent =
 		requires { { T::ID } -> std::same_as<const uint64_t&>; }

@@ -27,20 +27,6 @@ namespace Carnival::ECS {
 		return s_Entries[e];
 	}
 
-	bool EntityManager::markDirty(Entity e) {
-		if (e >= s_NextID) return false;
-		if (s_Entries[e].status == DEAD
-			|| !(s_Entries[e].status & NET_UPD)
-			|| (s_Entries[e].status & DIRTY))
-			return false;
-		s_Entries[e].status = static_cast<EntityStatus>(s_Entries[e].status | DIRTY);
-		return true;
-	}
-	void EntityManager::clearDirty(Entity e) {
-		if (e >= s_NextID) return;
-		s_Entries[e].status = static_cast<EntityStatus>(s_Entries[e].status & ~DIRTY);
-	}
-
 	void EntityManager::updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status) {
 		if (e >= s_NextID) return;
 		if (s_Entries[e].status == DEAD) {
