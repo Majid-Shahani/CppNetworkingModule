@@ -79,7 +79,8 @@ struct OnUpdateNetworkComponent {
 };
 
 void PositionMoverSystem(Archetype& arch, float delta) {
-	Position* pos = static_cast<Position*>(arch.getComponentData(Position::ID));
+	uint32_t index = arch.getComponentIndex(Position::ID);
+	Position* pos = static_cast<Position*>(arch.writeComponentData(index));
 	uint32_t count = arch.getEntityCount();
 
 	for (uint32_t i{}; i < count; i++) {
@@ -122,7 +123,7 @@ int main() {
 
 	// =========================================== Main Loop ========================================= //
 	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked 
-	// PositionMoverSystem(*arch, 1.0f);
+	PositionMoverSystem(*arch, 1.0f);
 
 
 	/*

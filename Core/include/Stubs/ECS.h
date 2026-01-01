@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <span>
+#include <stdexcept>
 #include <memory>
 
 namespace Carnival::ECS {
@@ -123,22 +124,40 @@ namespace Carnival::ECS {
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg, 
 			std::span<const uint64_t> componentIDs, uint32_t initialCapacity = 5);
 
-		std::vector<uint64_t> getComponentIDs() const;
+		std::vector<uint64_t>	getComponentIDs() const;
 
-		uint32_t addEntity(Entity id);
-		uint32_t addEntity(Entity id, const Archetype& src, uint32_t srcIndex);
+		uint32_t				addEntity(Entity id);
+		uint32_t				addEntity(Entity id, const Archetype& src, uint32_t srcIndex);
 
-		void removeEntity(Entity entity);
-		void removeEntityAt(uint32_t index);
-		void removeLastEntity();
+		void					removeEntity(Entity entity);
+		void					removeEntityAt(uint32_t index);
+		void					removeLastEntity();
 
-		inline uint32_t getEntityCount() const { return m_EntityCount; }
-		inline Entity	getEntity(uint32_t index) const { return m_Entities[index]; }
-		inline void*	getComponentData(uint64_t cID) { 
-			for (auto& c : m_Components) 
-				if (c.metadata.componentTypeID == cID) 
-					return c.pComponentData;
-			return nullptr;
+		inline uint32_t			getEntityCount() const { return m_EntityCount; }
+		inline Entity			getEntity(uint32_t index) const { return m_Entities[index]; }
+
+		inline bool				testAndSetComponentDirty(uint32_t index) {
+			if (index >= m_Components.size()) throw std::runtime_error("Index out of bounds.");
+			bool res = m_DirtyFlags[index];
+			m_DirtyFlags[index] = true;
+			return res;
+		}
+		inline void				clearComponentDirty(uint32_t index) {
+			if (index >= m_Components.size()) throw std::runtime_error("Index out of bounds.");
+			m_DirtyFlags[index] = false;
+		}
+
+		inline uint32_t			getComponentIndex(uint64_t cID) const {
+			for (int i{}; i < m_Components.size(); i++) if (m_Components[i].metadata.componentTypeID == cID) return i;
+			return UINT32_MAX;
+		}
+		inline void const*		readComponentData(uint32_t index) const { 
+			if (index >= m_Components.size()) return nullptr;
+			return m_Components[index].pComponentData;
+		}
+		inline void*			writeComponentData(uint32_t index) {
+			if (index >= m_Components.size()) return nullptr;
+			return m_Components[index].pComponentData;
 		}
 
 		~Archetype() noexcept;
@@ -154,6 +173,7 @@ namespace Carnival::ECS {
 	private:
 		std::vector<ComponentColumn> m_Components{};
 		std::vector<Entity> m_Entities{};
+		std::vector<uint8_t> m_DirtyFlags{};
 		const uint64_t m_ArchetypeID;
 		uint32_t m_Capacity{};
 		uint32_t m_EntityCount{};
