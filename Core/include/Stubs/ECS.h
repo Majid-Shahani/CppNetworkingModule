@@ -52,7 +52,6 @@ namespace Carnival::ECS {
 
 	struct ComponentMetadata {
 		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
-		uint64_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
 
 		using ConstructFn	= void (*)(void* dest, uint32_t count) noexcept;
 		using DestructFn	= void (*)(void* dest, uint32_t count) noexcept;
@@ -65,6 +64,9 @@ namespace Carnival::ECS {
 		CopyFn			copyFn			= nullptr;
 		SerializeFn		serializeFn		= nullptr;
 		DeserializeFn	deserializeFn	= nullptr;
+
+		uint32_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
+		uint32_t alignOfComponent{ 0xFFFFFFFFFFFFFFFFul };
 	};
 
 	struct ComponentColumn {
@@ -92,12 +94,13 @@ namespace Carnival::ECS {
 		void registerComponent() {
 			ComponentMetadata meta{
 				.componentTypeID	= T::ID,
-				.sizeOfComponent	= sizeof(T),
 				.constructFn		= &T::construct,
 				.destructFn			= &T::destruct,
 				.copyFn				= &T::copy,
 				.serializeFn		= &T::serialize,
 				.deserializeFn		= &T::deserialize,
+				.sizeOfComponent	= sizeof(T),
+				.alignOfComponent	= alignof(T),
 			};
 			registerComponent(meta);
 		}
