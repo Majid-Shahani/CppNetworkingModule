@@ -194,6 +194,7 @@ namespace Carnival::ECS {
 			}
 		}
 	}
+	// Possibly Destructors should not be called, if moved / copied entity will be come invalid after destruction.
 	void Archetype::removeEntityAt(uint32_t index) {
 		if (m_EntityCount == 0 || index >= m_EntityCount) return;
 		// Swap and Destruct Components
@@ -229,7 +230,7 @@ namespace Carnival::ECS {
 		for (auto& cc : m_Components) {
 			if (cc.pComponentData != nullptr) {
 				cc.metadata.destructFn(static_cast<uint8_t*>(cc.pComponentData), m_EntityCount);
-				operator delete(cc.pComponentData);
+				operator delete(cc.pComponentData, std::align_val_t(cc.metadata.sizeOfComponent));
 			}
 		}
 	}
@@ -243,7 +244,7 @@ namespace Carnival::ECS {
 			m_DirtyFlags.emplace_back(false);
 		}
 		for (auto& c : m_Components) {
-			c.pComponentData = operator new(c.metadata.sizeOfComponent * m_Capacity);
+			c.pComponentData = operator new(c.metadata.sizeOfComponent * m_Capacity, std::align_val_t(c.metadata.sizeOfComponent));
 		}
 	}
 
@@ -251,10 +252,10 @@ namespace Carnival::ECS {
 		if (newCapacity > m_Capacity) {
 			uint32_t updatedCapacity = static_cast<uint32_t>((m_Capacity + 1) * 1.5);
 			for (auto& c : m_Components) {
-				void* newMem = operator new(c.metadata.sizeOfComponent * updatedCapacity);
+				void* newMem = operator new(c.metadata.sizeOfComponent * updatedCapacity, std::align_val_t(c.metadata.sizeOfComponent));
 				c.metadata.copyFn(c.pComponentData, newMem, m_EntityCount);
 				c.metadata.destructFn(c.pComponentData, m_EntityCount);
-				operator delete(c.pComponentData);
+				operator delete(c.pComponentData, std::align_val_t(c.metadata.sizeOfComponent));
 				c.pComponentData = newMem;
 			}
 			m_Capacity = updatedCapacity;
