@@ -65,8 +65,8 @@ namespace Carnival::ECS {
 		SerializeFn		serializeFn		= nullptr;
 		DeserializeFn	deserializeFn	= nullptr;
 
-		uint32_t sizeOfComponent{ 0xFFFFFFFFFFFFFFFFul };
-		uint32_t alignOfComponent{ 0xFFFFFFFFFFFFFFFFul };
+		uint32_t sizeOfComponent{ 0xFFFFFFFFu };
+		uint32_t alignOfComponent{ 0xFFFFFFFFu };
 	};
 
 	struct ComponentColumn {

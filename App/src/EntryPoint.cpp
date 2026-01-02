@@ -4,9 +4,10 @@
 #include <thread>
 #include <chrono>
 
-using namespace Carnival::utils;
-using namespace Carnival::Network;
-using namespace Carnival::ECS;
+using namespace Carnival;
+using namespace utils;
+using namespace Network;
+using namespace ECS;
 using namespace std::chrono_literals;
 
 struct Position {
@@ -36,13 +37,10 @@ struct OnTickNetworkComponent {
 
 	static constexpr uint64_t ID{ fnv1a64("OnTickNetworkComponent") };
 	static void construct(void* dest, uint32_t count) noexcept {
-		auto* p = static_cast<OnTickNetworkComponent*>(dest);
-		for (uint64_t i{}; i < count; i++) {
-			p[i].networkID = 0; // Get next networkID maybe
-		}
+		std::memset(dest, 0, sizeof(OnTickNetworkComponent) * count);
 	}
 	static void destruct(void* dest, uint32_t count) noexcept {
-		// Free Network IDs
+		std::memset(dest, 0, sizeof(OnUpdateNetworkComponent) * count);
 	}
 	static void copy(const void* src, void* dest, uint32_t count) {
 		memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
@@ -56,16 +54,16 @@ struct OnTickNetworkComponent {
 };
 struct OnUpdateNetworkComponent {
 	uint32_t networkID{};
+	bool dirty{ false };
+	uint8_t padding[3]{};
 
 	static constexpr uint64_t ID{ fnv1a64("OnUpdateNetworkComponent") };
 	static void construct(void* dest, uint32_t count) noexcept {
-		auto* p = static_cast<OnUpdateNetworkComponent*>(dest);
-		for (uint64_t i{}; i < count; i++) {
-			p[i].networkID = 0; // Get next networkID maybe
-		}
+		std::memset(dest, 0, sizeof(OnUpdateNetworkComponent) * count);
 	}
 	static void destruct(void* dest, uint32_t count) noexcept {
 		// Free Network IDs
+		std::memset(dest, 0, sizeof(OnUpdateNetworkComponent) * count);
 	}
 	static void copy(const void* src, void* dest, uint32_t count) {
 		memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
