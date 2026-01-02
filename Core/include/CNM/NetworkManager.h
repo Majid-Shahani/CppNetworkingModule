@@ -37,12 +37,6 @@ namespace Carnival::Network {
 		void removePeer(uint16_t peerID);
 
 	private:
-		struct ChannelState {
-			uint32_t	lastSent{};
-			uint32_t	lastReceived{};
-			uint32_t	receivedACK{};
-		};
-
 		enum class ChannelID : uint8_t {
 			UNRELIABLE = 0,
 			RELIABLE = 1,
@@ -51,18 +45,23 @@ namespace Carnival::Network {
 
 		enum PacketFlags : uint8_t {
 			PAYLOAD = 1 << 0,
-			FRAGMENT = 1 << 1,
-			HEARTBEAT = 1 << 2,
-			CONNECTION = 1 << 3,
-			SCHEMA = 1 << 4,
+			HEARTBEAT = 1 << 1,
+			CONNECTION = 1 << 2,
+			SCHEMA = 1 << 3,
 		};
 
 		struct FragmentLoad {
 			uint16_t batchNumber{};
-			uint16_t fragmentIndex{}; // number of fragment from batch
 			uint16_t FRAGMENT_COUNT{};
-			uint8_t packetState{}; // 0 - Start, 1 - Middle, 2 - Finish
-			uint8_t padding{}; // Compiler inserted padding made explicit
+			uint16_t fragmentIndex{};
+		};
+
+		struct ChannelState {
+			uint16_t	batchNumber{};
+			uint16_t	FRAGMENT_COUNT{};
+			uint32_t	lastSent{};
+			uint32_t	lastReceived{};
+			uint32_t	receivedACK{};
 		};
 
 		struct Peer {
@@ -73,13 +72,14 @@ namespace Carnival::Network {
 			uint16_t	peerID{};
 		};
 		struct PacketHeader {
-			uint32_t	PROTOCOL_VERSION{ HEADER_VERSION };
-			uint32_t	SequenceNumber{}; // Sequence of this packet being sent.
-			uint32_t	ACKField{}; // Last 32 packets received
-			uint32_t	LastSeqReceived{};
-			uint16_t	SessionID{};
-			ChannelID	Channel{ ChannelID::UNRELIABLE };
-			PacketFlags Flags{ PacketFlags::HEARTBEAT };
+			uint32_t		PROTOCOL_VERSION{ HEADER_VERSION };
+			uint32_t		SequenceNumber{}; // Sequence of this packet being sent.
+			uint32_t		ACKField{}; // Last 32 packets received
+			uint32_t		LastSeqReceived{};
+			uint16_t		SessionID{};
+			FragmentLoad	fragmentData{};
+			ChannelID		Channel{ ChannelID::UNRELIABLE };
+			PacketFlags		Flags{ PacketFlags::HEARTBEAT };
 		};
 
 	private:
