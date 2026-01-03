@@ -139,15 +139,12 @@ namespace Carnival::ECS {
 		inline uint32_t			getEntityCount() const { return m_EntityCount; }
 		inline Entity			getEntity(uint32_t index) const { return m_Entities[index]; }
 
-		inline bool				testAndSetComponentDirty(uint32_t index) {
-			if (index >= m_Components.size()) throw std::runtime_error("Index out of bounds.");
-			bool res = m_DirtyFlags[index];
-			m_DirtyFlags[index] = true;
-			return res;
+		inline bool				testAndSetEntityDirty(uint32_t index) noexcept {
+			//if (index >= m_Entities.size()) throw std::runtime_error("Index out of bounds.");
+			return true;
 		}
-		inline void				clearComponentDirty(uint32_t index) {
-			if (index >= m_Components.size()) throw std::runtime_error("Index out of bounds.");
-			m_DirtyFlags[index] = false;
+		inline void				clearEntityDirty(uint32_t index) {
+			if (index >= m_Entities.size()) throw std::runtime_error("Index out of bounds.");
 		}
 
 		inline uint32_t			getComponentIndex(uint64_t cID) const {
@@ -176,7 +173,6 @@ namespace Carnival::ECS {
 	private:
 		std::vector<ComponentColumn> m_Components{};
 		std::vector<Entity> m_Entities{};
-		std::vector<uint8_t> m_DirtyFlags{};
 		const uint64_t m_ArchetypeID;
 		uint32_t m_Capacity{};
 		uint32_t m_EntityCount{};

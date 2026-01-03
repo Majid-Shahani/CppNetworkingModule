@@ -40,7 +40,7 @@ struct OnTickNetworkComponent {
 		std::memset(dest, 0, sizeof(OnTickNetworkComponent) * count);
 	}
 	static void destruct(void* dest, uint32_t count) noexcept {
-		std::memset(dest, 0, sizeof(OnUpdateNetworkComponent) * count);
+		std::memset(dest, 0, sizeof(OnTickNetworkComponent) * count);
 	}
 	static void copy(const void* src, void* dest, uint32_t count) {
 		memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);

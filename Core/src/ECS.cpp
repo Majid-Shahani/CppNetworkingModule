@@ -239,10 +239,6 @@ namespace Carnival::ECS {
 		uint32_t initialCapacity)
 		: m_Components{ std::move(components) }, m_ArchetypeID{ getArchetypeID(componentIDs) }, m_Capacity{ initialCapacity }
 	{
-		m_DirtyFlags.reserve(m_Components.size());
-		for (int i{}; i < m_Components.size(); i++) {
-			m_DirtyFlags.emplace_back(false);
-		}
 		for (auto& c : m_Components) {
 			c.pComponentData = operator new(c.metadata.sizeOfComponent * m_Capacity, std::align_val_t(c.metadata.alignOfComponent));
 		}
