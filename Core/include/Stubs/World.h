@@ -16,134 +16,151 @@ namespace Carnival::ECS {
 		RW = ReadWrite,
 	};
 
-	template<QueryPolicy P, ECSComponent C>
-	struct InnerLocalIter {
-		static constexpr bool writable = (P == QueryPolicy::ReadWrite);
-
-		decltype(auto) operator*() const noexcept {
-			if constexpr (writable)
-				return *current;
-			else
-				return static_cast<const C&>(*current);
-		}
-		decltype(auto) operator->() const noexcept {
-			if constexpr (writable)
-				return current;
-			else
-				return static_cast<const C*>(current);
-		}
-
-		bool operator!=(const InnerLocalIter& other) const noexcept {
-			return current != other.current; // && arch != other.arch;
-		}
-		bool operator==(const InnerLocalIter& other) const noexcept {
-			return current == other.current; // && arch == other.arch;
-		}
-
-		InnerLocalIter& operator++() noexcept {
-			++current;
-			return *this;
-		}
-
-		bool done() const noexcept { return current == end; }
-
+	class World {
 	private:
-		C* current;
-		C* end;
-	};
+		template<QueryPolicy P, ECSComponent C>
+		struct InnerLocalIter {
+			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
 
-	template<QueryPolicy P, ECSComponent C>
-	struct InnerNetworkedIter {
-		static constexpr bool writable = (P == QueryPolicy::ReadWrite);
-
-		decltype(auto) operator*() const noexcept {
-			if constexpr (writable) {
-				if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
-				return *current;
+			decltype(auto) operator*() const noexcept {
+				if constexpr (writable)
+					return *current;
+				else
+					return static_cast<const C&>(*current);
 			}
-			else
-				return static_cast<const C&>(*current);
-		}
-		decltype(auto) operator->() const noexcept {
-			if constexpr (writable) {
-				if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
-				return current;
+			decltype(auto) operator->() const noexcept {
+				if constexpr (writable)
+					return current;
+				else
+					return static_cast<const C*>(current);
 			}
-			else
-				return static_cast<const C*>(current);
-		}
 
-		bool operator!=(const InnerNetworkedIter& other) const noexcept {
-			return current != other.current; // && arch != other.arch;
-		}
-		bool operator==(const InnerNetworkedIter& other) const noexcept {
-			return current == other.current;// && arch == other.arch;
-		}
+			bool operator!=(const InnerLocalIter& other) const noexcept {
+				return current != other.current; // && arch != other.arch;
+			}
+			bool operator==(const InnerLocalIter& other) const noexcept {
+				return current == other.current; // && arch == other.arch;
+			}
 
-		InnerNetworkedIter& operator++() noexcept {
-			++current;
-			++index;
-			return *this;
-		}
+			InnerLocalIter& operator++() noexcept {
+				++current;
+				return *this;
+			}
 
-		bool done() const noexcept { return current == end; }
+			bool done() const noexcept { return current == end; }
 
-	private:
-		C* current;
-		C* end;
-		Archetype& arch;
-		uint64_t index{};
-	};
+		private:
+			C* current;
+			C* end;
+		};
 
-	template <QueryPolicy P, ECSComponent C>
-	struct OuterIter {
-		using LocalIter = InnerLocalIter<P, C>;
-		using NetworkedIter = InnerNetworkedIter<P, C>;
+		template<QueryPolicy P, ECSComponent C>
+		struct InnerNetworkedIter {
+			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
 
-		OuterIter(std::span<LocalIter> locals, std::span<NetworkedIter> networks)
-			: localChunks{ locals }, networkedChunks{ networks }, currentChunk{ 0 }, onLocal{true}, done{false}
-		{}
+			decltype(auto) operator*() const noexcept {
+				if constexpr (writable) {
+					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
+					return *current;
+				}
+				else
+					return static_cast<const C&>(*current);
+			}
+			decltype(auto) operator->() const noexcept {
+				if constexpr (writable) {
+					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
+					return current;
+				}
+				else
+					return static_cast<const C*>(current);
+			}
 
-		decltype(auto) operator*() const noexcept {
-			if (onLocal) return localChunks[currentChunk];
-			else		 return networkedChunks[currentChunk];
-		}
+			bool operator!=(const InnerNetworkedIter& other) const noexcept {
+				return current != other.current; // && arch != other.arch;
+			}
+			bool operator==(const InnerNetworkedIter& other) const noexcept {
+				return current == other.current;// && arch == other.arch;
+			}
 
-		OuterIter& operator++() noexcept {
-			if (onLocal) {
-				++localChunks[currentChunk];
-				if (localChunks[currentChunk].done()) {
-					++currentChunk;
-					if (currentChunk >= localChunks.size()) {
-						currentChunk = 0;
-						onLocal = false;
+			InnerNetworkedIter& operator++() noexcept {
+				++current;
+				++index;
+				return *this;
+			}
+
+			bool done() const noexcept { return current == end; }
+
+		private:
+			C* current;
+			C* end;
+			Archetype& arch;
+			uint64_t index{};
+		};
+
+	public:
+		template <QueryPolicy P, ECSComponent C>
+		struct OuterIter {
+			using LocalIter = InnerLocalIter<P, C>;
+			using NetworkedIter = InnerNetworkedIter<P, C>;
+
+			OuterIter(std::span<LocalIter> locals, 
+				std::span<NetworkedIter> networks,
+				uint64_t chunk,
+				bool local,
+				bool doneFlag)
+				: localChunks{ locals }, networkedChunks{ networks }, currentChunk{ chunk }, onLocal{ local }, isDone{ doneFlag }
+			{
+			}
+
+			decltype(auto) operator*() const noexcept {
+				if (onLocal) return *localChunks[currentChunk];
+				else		 return *networkedChunks[currentChunk];
+			}
+			decltype(auto) operator->() const noexcept {
+				if (onLocal) return localChunks[currentChunk].operator->();
+				else		 return networkedChunks[currentChunk].operator->();
+			}
+
+			OuterIter& operator++() noexcept {
+				if (onLocal) {
+					++localChunks[currentChunk];
+					if (localChunks[currentChunk].done()) {
+						++currentChunk;
+						if (currentChunk >= localChunks.size()) {
+							currentChunk = 0;
+							onLocal = false;
+						}
 					}
 				}
-			}
-			else {
-				++networkedChunks[currentChunk];
-				if (networkedChunks[currentChunk].done()) {
-					++currentChunk;
-					if (currentChunk >= networkedChunks.size()) isDone = true;
+				else {
+					++networkedChunks[currentChunk];
+					if (networkedChunks[currentChunk].done()) {
+						++currentChunk;
+						if (currentChunk >= networkedChunks.size()) isDone = true;
+					}
 				}
+				return *this;
 			}
-			return *this;
-		}
+			
+			bool operator!=(const OuterIter& other) const noexcept {
+				if (onLocal)
+					return localChunks[currentChunk] != other.localChunks[other.currentChunk];
+				else
+					return networkedChunks[currentChunk] != other.networkedChunks[other.currentChunk];
+			}
 
-		bool done() const {
-			return isDone;
-		}
+			bool done() const {
+				return isDone;
+			}
 
-	private:
-		std::span<LocalIter>		localChunks;
-		std::span<NetworkedIter>	networkedChunks;
-		uint64_t currentChunk{};
-		bool onLocal{ true };
-		bool isDone{ false };
-		// 6 Bytes of Padding
-	};
-
-	class World {
+		private:
+			std::span<LocalIter>		localChunks;
+			std::span<NetworkedIter>	networkedChunks;
+			uint64_t currentChunk{};
+			bool onLocal{ true };
+			bool isDone{ false };
+			// 6 Bytes of Padding
+		};
 	public:
 		// TODO: Rule of 5
 		Entity createEntity(std::span<uint64_t> components);
@@ -159,7 +176,7 @@ namespace Carnival::ECS {
 		void removeComponentFromEntity(Entity e);
 
 		template <QueryPolicy P, ECSComponent T>
-		outerIter<P, T> query();
+		OuterIter<P, T> query();
 
 		void startUpdate();
 		void endUpdate();
