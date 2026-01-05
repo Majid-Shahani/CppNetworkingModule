@@ -5,6 +5,7 @@
 #include <span>
 
 #include <Stubs/ECS.h>
+#include <CNM/macros.h>
 
 namespace Carnival::ECS {
 
@@ -20,15 +21,26 @@ namespace Carnival::ECS {
 	private:
 		template<QueryPolicy P, ECSComponent C>
 		struct InnerLocalIter {
+			InnerLocalIter(C* base, C* end) : current{ base }, end{ end } {}
+
 			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
+			
+			const C& read() const noexcept {
+				return *current;
+			}
+			C& write() noexcept requires(writable) {
+				return *current;
+			}
 
 			decltype(auto) operator*() const noexcept {
+				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				if constexpr (writable)
 					return *current;
 				else
 					return static_cast<const C&>(*current);
 			}
 			decltype(auto) operator->() const noexcept {
+				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				if constexpr (writable)
 					return current;
 				else
@@ -43,6 +55,7 @@ namespace Carnival::ECS {
 			}
 
 			InnerLocalIter& operator++() noexcept {
+				CL_CORE_ASSRT(current < end, "Incrementing End Iterator.");
 				++current;
 				return *this;
 			}
@@ -56,9 +69,21 @@ namespace Carnival::ECS {
 
 		template<QueryPolicy P, ECSComponent C>
 		struct InnerNetworkedIter {
+			InnerNetworkedIter(C* base, C* end, Archetype& archetype)
+				: current{ base }, end{ end }, arch{ archetype }, index{ arch.getEntityCount() - (end - current) } {}
+
 			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
 
+			const C& read() const noexcept {
+				return *current;
+			}
+			C& write() noexcept requires(writable) {
+				if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
+				return *current;
+			}
+
 			decltype(auto) operator*() const noexcept {
+				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				if constexpr (writable) {
 					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
 					return *current;
@@ -67,6 +92,7 @@ namespace Carnival::ECS {
 					return static_cast<const C&>(*current);
 			}
 			decltype(auto) operator->() const noexcept {
+				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				if constexpr (writable) {
 					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
 					return current;
@@ -83,6 +109,7 @@ namespace Carnival::ECS {
 			}
 
 			InnerNetworkedIter& operator++() noexcept {
+				CL_CORE_ASSERT(current < end, "Incrementing End Iterator");
 				++current;
 				++index;
 				return *this;
@@ -102,26 +129,42 @@ namespace Carnival::ECS {
 		struct OuterIter {
 			using LocalIter = InnerLocalIter<P, C>;
 			using NetworkedIter = InnerNetworkedIter<P, C>;
+			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
+
 
 			OuterIter(std::span<LocalIter> locals, 
 				std::span<NetworkedIter> networks,
-				uint64_t chunk,
-				bool local,
-				bool doneFlag)
+				uint64_t chunk = 0,
+				bool local = true,
+				bool doneFlag = false)
 				: localChunks{ locals }, networkedChunks{ networks }, currentChunk{ chunk }, onLocal{ local }, isDone{ doneFlag }
 			{
 			}
 
 			decltype(auto) operator*() const noexcept {
+				CL_CORE_ASSERT(!isDone, "Accessing Iterator On End");
 				if (onLocal) return *localChunks[currentChunk];
 				else		 return *networkedChunks[currentChunk];
 			}
 			decltype(auto) operator->() const noexcept {
+				CL_CORE_ASSERT(!isDone, "Accessing Iterator On End");
 				if (onLocal) return localChunks[currentChunk].operator->();
 				else		 return networkedChunks[currentChunk].operator->();
 			}
 
+			decltype(auto) read() const noexcept {
+				CL_CORE_ASSERT(!isDone, "Accessing Iterator On End");
+				if (onLocal) return localChunks[currentChunk].read();
+				else		 return networkedChunks[currentChunk].read();
+			}
+			decltype(auto) write() noexcept requires(writable) {
+				CL_CORE_ASSERT(!isDone, "Accessing Iterator On End");
+				if (onLocal) return localChunks[currentChunk].write();
+				else return networkedChunks[currentChunk].write();
+			}
+
 			OuterIter& operator++() noexcept {
+				CL_CORE_ASSERT(!isDone, "Incrementing End Iterator.");
 				if (onLocal) {
 					++localChunks[currentChunk];
 					if (localChunks[currentChunk].done()) {
@@ -129,6 +172,7 @@ namespace Carnival::ECS {
 						if (currentChunk >= localChunks.size()) {
 							currentChunk = 0;
 							onLocal = false;
+							if (networkedChunks.size() == 0) isDone = true;
 						}
 					}
 				}
@@ -143,10 +187,15 @@ namespace Carnival::ECS {
 			}
 			
 			bool operator!=(const OuterIter& other) const noexcept {
-				if (onLocal)
-					return localChunks[currentChunk] != other.localChunks[other.currentChunk];
+				if (isDone && other.done()) return false;
+				else if (!isDone && !other.done()) {
+					if (onLocal)
+						return localChunks[currentChunk] != other.localChunks[other.currentChunk];
+					else
+						return networkedChunks[currentChunk] != other.networkedChunks[other.currentChunk];
+				}
 				else
-					return networkedChunks[currentChunk] != other.networkedChunks[other.currentChunk];
+					return true;
 			}
 
 			bool done() const {
@@ -161,6 +210,21 @@ namespace Carnival::ECS {
 			bool isDone{ false };
 			// 6 Bytes of Padding
 		};
+
+		template <QueryPolicy P, ECSComponent C>
+		struct ComponentRange {
+			using Iterator = OuterIter<P, C>;
+
+			ComponentRange(std::vector<InnerLocalIter<P, C>>&& local, std::vector<InnerNetworkedIter<P, C>>&& networks)
+				: locals{ std::move(local) }, networkeds{ std::move(networks) } {}
+
+			Iterator begin() { return Iterator{ locals, networkeds }; }
+			Iterator end() { return Iterator{ locals, networkeds, UINT64_MAX, false, true };	}
+		private:
+			std::vector<InnerLocalIter<P, C>> locals;
+			std::vector<InnerNetworkedIter<P, C>> networkeds;
+		};
+
 	public:
 		// TODO: Rule of 5
 		Entity createEntity(std::span<uint64_t> components);
@@ -176,7 +240,7 @@ namespace Carnival::ECS {
 		void removeComponentFromEntity(Entity e);
 
 		template <QueryPolicy P, ECSComponent T>
-		OuterIter<P, T> query();
+		ComponentRange<P, T> query();
 
 		void startUpdate();
 		void endUpdate();

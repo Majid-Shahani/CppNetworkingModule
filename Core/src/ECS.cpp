@@ -240,7 +240,7 @@ namespace Carnival::ECS {
 		: m_Components{ std::move(components) }, m_ArchetypeID{ getArchetypeID(componentIDs) }, m_Capacity{ initialCapacity }
 	{
 		for (auto& c : m_Components) {
-			c.pComponentData = operator new(c.metadata.sizeOfComponent * m_Capacity, std::align_val_t(c.metadata.alignOfComponent));
+			c.pComponentData = operator new(static_cast<uint64_t>(c.metadata.sizeOfComponent) * m_Capacity, std::align_val_t(c.metadata.alignOfComponent));
 		}
 	}
 
@@ -248,7 +248,7 @@ namespace Carnival::ECS {
 		if (newCapacity > m_Capacity) {
 			uint32_t updatedCapacity = static_cast<uint32_t>((m_Capacity + 1) * 1.5);
 			for (auto& c : m_Components) {
-				void* newMem = operator new(c.metadata.sizeOfComponent * updatedCapacity, std::align_val_t(c.metadata.alignOfComponent));
+				void* newMem = operator new(static_cast<uint64_t>(c.metadata.sizeOfComponent) * updatedCapacity, std::align_val_t(c.metadata.alignOfComponent));
 				c.metadata.copyFn(c.pComponentData, newMem, m_EntityCount);
 				c.metadata.destructFn(c.pComponentData, m_EntityCount);
 				operator delete(c.pComponentData, std::align_val_t(c.metadata.alignOfComponent));
