@@ -10,15 +10,15 @@ namespace Carnival::ECS {
 	// ==================================== Entity Manager ============================================= //
 	// ================================================================================================ //
 
-	Entity EntityManager::create(Archetype* archetype, uint32_t index, EntityStatus status) {
+	Entity EntityManager::create(uint64_t archetypeID, uint32_t index, EntityStatus status) {
 		status = static_cast<EntityStatus>(status | ALIVE);
 		if (!m_FreeIDs.empty()) {
 			Entity id = m_FreeIDs[m_FreeIDs.size() - 1];
 			m_FreeIDs.pop_back();
-			m_Entries[id] = { archetype, index, status };
+			m_Entries[id] = { archetypeID, index, status };
 			return id;
 		}
-		m_Entries.push_back({ archetype, index, status });
+		m_Entries.push_back({ archetypeID, index, status });
 		return static_cast<Entity>(m_Entries.size() - 1);
 	}
 
@@ -28,29 +28,29 @@ namespace Carnival::ECS {
 		return m_Entries[e];
 	}
 
-	void EntityManager::updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status) {
+	void EntityManager::updateEntity(Entity e, uint64_t archetypeID, uint32_t index, EntityStatus status) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
 		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "Update called for dead entity");
-		m_Entries[e] = { archetype, index, status };
+		m_Entries[e] = { archetypeID, index, status };
 	}
-	void EntityManager::updateEntityLocation(Entity e, Archetype* archetype, uint32_t index) {
+	void EntityManager::updateEntityLocation(Entity e, uint64_t archetypeID, uint32_t index) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
 		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "Update Location called for dead entity");
-		m_Entries[e].archetype = archetype;
+		m_Entries[e].archetypeID = archetypeID;
 		m_Entries[e].index = index;
 	}
 
 	void EntityManager::destroyEntity(Entity e) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
 		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "Destroy called for dead entity");
-		m_Entries[e] = { nullptr, 0, EntityStatus::DEAD };
+		m_Entries[e] = { 0, 0, EntityStatus::DEAD };
 		m_FreeIDs.push_back(e);
 	}
 	void EntityManager::destroyEntities(std::span<const Entity> e) {
 		for (const Entity entity : e) {
 			CL_CORE_ASSERT(entity < m_Entries.size(), "Entity access for out of bounds entity requested");
 			CL_CORE_ASSERT(m_Entries[entity].status & ALIVE, "Destroy called for dead entity");
-			m_Entries[entity] = { nullptr, 0, EntityStatus::DEAD };
+			m_Entries[entity] = { 0, 0, EntityStatus::DEAD };
 			m_FreeIDs.push_back(entity);
 		}
 	}
@@ -111,30 +111,18 @@ namespace Carnival::ECS {
 	// ================================================================================================ //
 
 	
-	std::unique_ptr<Archetype> Archetype::create(
-		const ComponentRegistry& metadataReg,
-		std::span<const uint64_t> componentIDs,
-		uint32_t initialCapacity) {
-
-		// Copy Component ID Array
-		std::vector<uint64_t> sortedIDs(componentIDs.begin(), componentIDs.end());
-
-		// Sort ID Array canonically
-		std::sort(sortedIDs.begin(), sortedIDs.end());
-
-		// Check for duplicate components in Entity
-		if (std::adjacent_find(sortedIDs.begin(), sortedIDs.end()) != sortedIDs.end()) return nullptr;
-
+	std::unique_ptr<Archetype> Archetype::create(const ComponentRegistry& metadataReg,
+		std::span<const uint64_t> sortedComponentIDs, uint64_t archetypeID, uint32_t initialCapacity) {
 		// Build Component columns and validate componentIDs
 		std::vector<ComponentColumn> columns;
-		columns.reserve(sortedIDs.size());
-		for (uint64_t compID : sortedIDs) {
+		columns.reserve(sortedComponentIDs.size());
+		for (uint64_t compID : sortedComponentIDs) {
 			auto metadata = metadataReg.getMetadataByID(compID);
 			if (metadata.componentTypeID == 0xFFFFFFFFFFFFFFFFul) return nullptr;
 			columns.emplace_back(metadata, nullptr);
 		}
 
-		return std::unique_ptr<Archetype>(new Archetype(std::move(columns), sortedIDs, initialCapacity));
+		return std::unique_ptr<Archetype>(new Archetype(std::move(columns), archetypeID, initialCapacity));
 	}
 
 	std::vector<uint64_t> Archetype::getComponentIDs() const {
@@ -180,7 +168,7 @@ namespace Carnival::ECS {
 		for (uint32_t i{}; i < m_EntityCount; i++) {
 			if (m_Entities[i] == entity) return removeEntityAt(i);
 		}
-		if (m_Entities[m_EntityCount] == entity) return removeLastEntity();
+		return UINT32_MAX;
 	}
 	// Possibly Destructors should not be called, if moved / copied entity will be come invalid after destruction.
 	// RETURNS INDEX OF entity to be updated in entity manager to the index passed in
@@ -219,9 +207,9 @@ namespace Carnival::ECS {
 		}
 	}
 	Archetype::Archetype(std::vector<ComponentColumn>&& components,
-		const std::vector<uint64_t>& componentIDs,
+		uint64_t archetypeID,
 		uint32_t initialCapacity)
-		: m_Components{ std::move(components) }, m_ArchetypeID{ getArchetypeID(componentIDs) }, m_Capacity{ initialCapacity }
+		: m_Components{ std::move(components) }, m_ArchetypeID{ archetypeID }, m_Capacity{ initialCapacity }
 	{
 		for (auto& c : m_Components) {
 			c.pComponentData = operator new(static_cast<uint64_t>(c.metadata.sizeOfComponent) * m_Capacity, std::align_val_t(c.metadata.alignOfComponent));
@@ -243,7 +231,7 @@ namespace Carnival::ECS {
 	}
 
 	// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
-	uint64_t Archetype::getArchetypeID(std::span<const uint64_t> compIDs) {
+	uint64_t Archetype::hashArchetypeID(std::span<const uint64_t> compIDs) {
 		uint64_t hash = utils::FNV64_OFFSET_BASIS;
 		for (auto id : compIDs) {
 			for (uint64_t i{}; i < 8; i++) {

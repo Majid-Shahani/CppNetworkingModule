@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <type_traits>
 #include <span>
+#include <unordered_map>
 
 #include <Stubs/ECS.h>
 #include <CNM/macros.h>
@@ -229,13 +230,11 @@ namespace Carnival::ECS {
 
 	public:
 		// TODO: Rule of 5
-		Entity createEntity(std::span<uint64_t> components);
+		Entity createEntity(std::vector<uint64_t> components, NetworkFlags flag = NetworkFlags::LOCAL);
 		void destroyEntity(Entity e);
 
 		template<ECSComponent... Ts>
-		void registerComponents() {
-			(m_Registry.registerComponent<Ts>(), ...);
-		}
+		void registerComponents() {	(m_Registry.registerComponent<Ts>(), ...); }
 		
 		template <ECSComponent... Ts>
 		void addComponentToEntity(Entity e);
@@ -248,16 +247,11 @@ namespace Carnival::ECS {
 
 		void startUpdate();
 		void endUpdate();
-		
 	private:
-
-
 	private:
-		ComponentRegistry		m_Registry;
-		EntityManager			m_EntityManager;
-		std::vector<Archetype>	m_onTickArchetypes;
-		std::vector<Archetype>	m_onUpdateArchetypes;
-		std::vector<Archetype>	m_localArchetypes;
+		EntityManager m_EntityManager;
+		std::unordered_map<uint64_t, ArchetypeRecord> m_Archetypes;
+		ComponentRegistry m_Registry;
 	};
 
 }

@@ -7,18 +7,69 @@
 #include <stdexcept>
 #include <memory>
 
+#include <CNM/utils.h>
+
 namespace Carnival::ECS {
+	class Archetype;
 	using Entity = uint32_t;
+
+	enum class NetworkFlags : uint8_t {
+		LOCAL = 0,
+		ON_TICK = 1,
+		ON_UPDATE = 2,
+	};
+
+	struct OnTickNetworkComponent {
+		uint32_t networkID{};
+
+		static constexpr uint64_t ID{ utils::fnv1a64("OnTickNetworkComponent") };
+		static void construct(void* dest, uint32_t count) noexcept {
+			std::memset(dest, 0, sizeof(OnTickNetworkComponent) * count);
+		}
+		static void destruct(void* dest, uint32_t count) noexcept {
+			std::memset(dest, 0, sizeof(OnTickNetworkComponent) * count);
+		}
+		static void copy(const void* src, void* dest, uint32_t count) {
+			memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
+		}
+		static void serialize(const void* src, void* out, uint32_t count) {
+			// static_cast<buffer*>(out)->put_uint32(static_cast<const OnTickNetworkComponent*>(src)->networkID);
+		}
+		static void deserialize(void* dest, const void* in, uint32_t count) {
+			// static_cast<OnTickNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
+		}
+	};
+	struct OnUpdateNetworkComponent {
+		uint32_t networkID{};
+		bool dirty{ false };
+		uint8_t padding[3]{};
+
+		static constexpr uint64_t ID{ utils::fnv1a64("OnUpdateNetworkComponent") };
+		static void construct(void* dest, uint32_t count) noexcept {
+			std::memset(dest, 0, sizeof(OnUpdateNetworkComponent) * count);
+		}
+		static void destruct(void* dest, uint32_t count) noexcept {
+			// Free Network IDs
+			std::memset(dest, 0, sizeof(OnUpdateNetworkComponent) * count);
+		}
+		static void copy(const void* src, void* dest, uint32_t count) {
+			memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
+		}
+		static void serialize(const void* src, void* out, uint32_t count) {
+			// static_cast<buffer*>(out)->put_uint32(static_cast<const OnUpdateNetworkComponent*>(src)->networkID);
+		}
+		static void deserialize(void* dest, const void* in, uint32_t count) {
+			// static_cast<OnUpdateNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
+		}
+	};
 
 	enum EntityStatus : uint32_t {
 		DEAD		= 0,
 		ALIVE		= 1 << 0,
 		// Reserved
 	};
-
-	class Archetype;
 	struct EntityEntry {
-		Archetype* archetype;
+		uint64_t archetypeID;
 		uint32_t index;
 		EntityStatus status;
 	};
@@ -33,12 +84,12 @@ namespace Carnival::ECS {
 	// Not Thread safe, Change
 	class EntityManager {
 	public:
-		Entity create(Archetype* archetype, uint32_t index, EntityStatus status);
+		Entity create(uint64_t archetypeID, uint32_t index, EntityStatus status = EntityStatus::DEAD);
 		
 		const EntityEntry& get(Entity e);
 
-		void updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status);
-		void updateEntityLocation(Entity e, Archetype* archetype, uint32_t index);
+		void updateEntity(Entity e, uint64_t archetypeID, uint32_t index, EntityStatus status);
+		void updateEntityLocation(Entity e, uint64_t archetypeID, uint32_t index);
 
 		void destroyEntity(Entity e);
 		void destroyEntities(std::span<const Entity> e);
@@ -123,7 +174,7 @@ namespace Carnival::ECS {
 		// TODO: RULE OF 5!
 
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg, 
-			std::span<const uint64_t> componentIDs, uint32_t initialCapacity = 5);
+			std::span<const uint64_t> sortedComponentIDs, uint64_t archetypeID, uint32_t initialCapacity = 5);
 
 		std::vector<uint64_t>	getComponentIDs() const;
 
@@ -157,17 +208,19 @@ namespace Carnival::ECS {
 			if (index >= m_Components.size()) return nullptr;
 			return m_Components[index].pComponentData;
 		}
+		inline uint64_t			getID() const { return m_ArchetypeID; }
+		// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
+		static uint64_t hashArchetypeID(std::span<const uint64_t> sortedCompIDs);
 
 		~Archetype() noexcept;
 	private:
 		// TODO: Memory Allocator so operator new doesn't throw :)
 		Archetype(std::vector<ComponentColumn>&& components,
-			const std::vector<uint64_t>& componentIDs,
+			uint64_t archetypeID,
 			uint32_t initialCapacity);
 
 		void ensureCapacity(uint32_t newCapacity);
-		// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
-		static uint64_t getArchetypeID(std::span<const uint64_t> compIDs);
+		
 	private:
 		std::vector<ComponentColumn> m_Components{};
 		std::vector<Entity> m_Entities{};
@@ -177,4 +230,13 @@ namespace Carnival::ECS {
 
 	};
 
+	struct ArchetypeRecord {
+		ArchetypeRecord(const ComponentRegistry& metadataReg,
+			std::span<const uint64_t> IDs, uint64_t ID, NetworkFlags flag, uint32_t initialCapacity = 5)
+			: arch{ Archetype::create(metadataReg, IDs, ID, initialCapacity)}, flags{flag} {
+		}
+		std::unique_ptr<Archetype> arch;
+		NetworkFlags flags;
+		// 7 bytes of padding
+	};
 }
