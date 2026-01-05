@@ -70,7 +70,7 @@ namespace Carnival::ECS {
 		// Reserved
 	};
 	struct EntityEntry {
-		uint64_t archetypeID;
+		Archetype* pArchetype;
 		uint32_t index;
 		EntityStatus status;
 	};
@@ -85,12 +85,12 @@ namespace Carnival::ECS {
 	// Not Thread safe, Change
 	class EntityManager {
 	public:
-		Entity create(uint64_t archetypeID, uint32_t index, EntityStatus status = EntityStatus::DEAD);
+		Entity create(Archetype* pArchetype, uint32_t index, EntityStatus status = EntityStatus::DEAD);
 		
 		const EntityEntry& get(Entity e);
 
-		void updateEntity(Entity e, uint64_t archetypeID, uint32_t index, EntityStatus status);
-		void updateEntityLocation(Entity e, uint64_t archetypeID, uint32_t index);
+		void updateEntity(Entity e, Archetype* pArchetype, uint32_t index, EntityStatus status);
+		void updateEntityLocation(Entity e, Archetype* pArchetype, uint32_t index);
 
 		void destroyEntity(Entity e);
 		void destroyEntities(std::span<const Entity> e);
@@ -238,6 +238,7 @@ namespace Carnival::ECS {
 			: arch{ Archetype::create(metadataReg, IDs, ID, initialCapacity)}, flags{flag} {
 		}
 		//ArchetypeRecord() : arch{ nullptr }, flags{ NetworkFlags::LOCAL } {}
+		// MOVE CONSTRUCTOR NEEDED!
 
 		std::unique_ptr<Archetype> arch;
 		NetworkFlags flags;

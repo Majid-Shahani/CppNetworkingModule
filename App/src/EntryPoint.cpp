@@ -53,7 +53,8 @@ int main() {
 	// =========================================== INIT ECS ========================================= //
 	World w{};
 	w.registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
-
+	Entity onTickEntity = w.createEntity<Position, OnTickNetworkComponent>();
+	Entity onUpdateEntity = w.createEntity<Position, OnUpdateNetworkComponent>();
 	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests

@@ -230,17 +230,74 @@ namespace Carnival::ECS {
 
 	public:
 		// TODO: Rule of 5
-		Entity createEntity(std::vector<uint64_t> components, NetworkFlags flag = NetworkFlags::LOCAL);
+
+
+		template <ECSComponent... Ts>
+		Entity createEntity() {
+			std::vector<uint64_t> IDs;
+			IDs.reserve(sizeof...(Ts));
+
+			(IDs.push_back(Ts::ID), ...);
+
+			return createEntity(IDs, getNetFlag(IDs));
+		}
 		void destroyEntity(Entity e);
 
 		template<ECSComponent... Ts>
 		void registerComponents() {	(m_Registry.registerComponent<Ts>(), ...); }
 		
 		template <ECSComponent... Ts>
-		void addComponentsToEntity(Entity e);
+		void addComponentsToEntity(Entity e) {
+			const auto& rec{ m_EntityManager.get(e) };
+			std::vector<uint64_t> components = m_Archetypes.at(rec.pArchetype->getID()).arch->getComponentIDs();
+
+			// Traverse Edges until ID is found
+			// graph later :(
+
+			components.reserve(components.size() + sizeof...(Ts));
+			(components.push_back(Ts::ID), ...);
+			uint64_t id = Archetype::hashArchetypeID(components);
+
+			auto flag = getNetFlag(components);
+			auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, flag, 5);
+			if (!inserted) {
+				CL_CORE_ASSERT(it->second.flags == flag, "Mismatch Network flags on archetype");
+				CL_CORE_ASSERT(it->second.arch->getComponentIDs() == components, "Hash Collision");
+			}
+
+			uint32_t index = it->second.arch->addEntity(e, rec.pArchetype, rec.index);
+			auto [swappedEntity, i] = rec.pArchetype->removeEntityAt(rec.index);
+			if (swappedEntity != e) {
+				m_EntityManager.updateEntityLocation(swappedEntity, rec.pArchetype, i);
+			}
+			m_EntityManager.updateEntityLocation(e, it->second.arch.get(), index);
+		}
 		
 		template <ECSComponent... Ts>
-		void removeComponentsFromEntity(Entity e);
+		void removeComponentsFromEntity(Entity e) {
+			const auto& rec{ m_EntityManager.get(e) };
+			std::vector<uint64_t> components = m_Archetypes.at(rec.pArchetype->getID()).arch->getComponentIDs();
+
+			// Traverse Edges until ID is found
+			// graph later :(
+
+			(components.erase(std::remove(components.begin(), components.end(), Ts::ID), components.end()), ...);
+			uint64_t id = Archetype::hashArchetypeID(components);
+
+			auto flag = getNetFlag(components);
+			auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, flag, 5);
+			if (!inserted) {
+				CL_CORE_ASSERT(it->second.flags == flag, "Mismatch Network flags on archetype");
+				CL_CORE_ASSERT(it->second.arch->getComponentIDs() == components, "Hash Collision");
+			}
+
+			uint32_t index = it->second.arch->addEntity(e, rec.pArchetype, rec.index);
+			auto [swappedEntity, i] = rec.pArchetype->removeEntityAt(rec.index);
+			if (swappedEntity != e) {
+				m_EntityManager.updateEntityLocation(swappedEntity, rec.pArchetype, i);
+			}
+			m_EntityManager.updateEntityLocation(e, it->second.arch.get(), index);
+		}
 
 		template <QueryPolicy P, ECSComponent T>
 		ComponentRange<P, T> query();
@@ -248,9 +305,16 @@ namespace Carnival::ECS {
 		void startUpdate();
 		void endUpdate();
 	private:
-		void addCompImpl(Entity e, uint64_t compID);
-		void removeCompImpl(Entity e, uint64_t compID);
-		void updateEntity(Entity e, uint64_t archID, uint32_t index);
+		Entity createEntity(std::vector<uint64_t> components, NetworkFlags flag = NetworkFlags::LOCAL);
+		
+		// Random Behavior if has both components
+		NetworkFlags getNetFlag(std::span<uint64_t> compIDs) {
+			for (const auto id : compIDs) {
+				if (id == OnTickNetworkComponent::ID) return NetworkFlags::ON_TICK;
+				else if (id == OnUpdateNetworkComponent::ID) return NetworkFlags::ON_UPDATE;
+			}
+			return NetworkFlags::LOCAL;
+		}
 	private:
 		EntityManager m_EntityManager;
 		std::unordered_map<uint64_t, ArchetypeRecord> m_Archetypes;

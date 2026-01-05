@@ -10,15 +10,15 @@ namespace Carnival::ECS {
 	// ==================================== Entity Manager ============================================= //
 	// ================================================================================================ //
 
-	Entity EntityManager::create(uint64_t archetypeID, uint32_t index, EntityStatus status) {
+	Entity EntityManager::create(Archetype* pArchetype, uint32_t index, EntityStatus status) {
 		status = static_cast<EntityStatus>(status | ALIVE);
 		if (!m_FreeIDs.empty()) {
 			Entity id = m_FreeIDs[m_FreeIDs.size() - 1];
 			m_FreeIDs.pop_back();
-			m_Entries[id] = { archetypeID, index, status };
+			m_Entries[id] = { pArchetype, index, status };
 			return id;
 		}
-		m_Entries.push_back({ archetypeID, index, status });
+		m_Entries.push_back({ pArchetype, index, status });
 		return static_cast<Entity>(m_Entries.size() - 1);
 	}
 
@@ -28,15 +28,15 @@ namespace Carnival::ECS {
 		return m_Entries[e];
 	}
 
-	void EntityManager::updateEntity(Entity e, uint64_t archetypeID, uint32_t index, EntityStatus status) {
+	void EntityManager::updateEntity(Entity e, Archetype* pArchetype, uint32_t index, EntityStatus status) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
 		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "Update called for dead entity");
-		m_Entries[e] = { archetypeID, index, status };
+		m_Entries[e] = { pArchetype, index, status };
 	}
-	void EntityManager::updateEntityLocation(Entity e, uint64_t archetypeID, uint32_t index) {
+	void EntityManager::updateEntityLocation(Entity e, Archetype* pArchetype, uint32_t index) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
 		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "Update Location called for dead entity");
-		m_Entries[e].archetypeID = archetypeID;
+		m_Entries[e].pArchetype = pArchetype;
 		m_Entries[e].index = index;
 	}
 
@@ -112,7 +112,7 @@ namespace Carnival::ECS {
 
 	
 	std::unique_ptr<Archetype> Archetype::create(const ComponentRegistry& metadataReg,
-		std::span<const uint64_t> sortedComponentIDs, uint64_t archetypeID, uint32_t initialCapacity) {
+		std::span<const uint64_t> sortedComponentIDs, uint64_t pArchetype, uint32_t initialCapacity) {
 		// Build Component columns and validate componentIDs
 		std::vector<ComponentColumn> columns;
 		columns.reserve(sortedComponentIDs.size());
@@ -122,7 +122,7 @@ namespace Carnival::ECS {
 			columns.emplace_back(metadata, nullptr);
 		}
 
-		return std::unique_ptr<Archetype>(new Archetype(std::move(columns), archetypeID, initialCapacity));
+		return std::unique_ptr<Archetype>(new Archetype(std::move(columns), pArchetype, initialCapacity));
 	}
 
 	std::vector<uint64_t> Archetype::getComponentIDs() const {
@@ -210,9 +210,9 @@ namespace Carnival::ECS {
 		}
 	}
 	Archetype::Archetype(std::vector<ComponentColumn>&& components,
-		uint64_t archetypeID,
+		uint64_t pArchetype,
 		uint32_t initialCapacity)
-		: m_Components{ std::move(components) }, m_ArchetypeID{ archetypeID }, m_Capacity{ initialCapacity }
+		: m_Components{ std::move(components) }, m_ArchetypeID{ pArchetype }, m_Capacity{ initialCapacity }
 	{
 		for (auto& c : m_Components) {
 			c.pComponentData = operator new(static_cast<uint64_t>(c.metadata.sizeOfComponent) * m_Capacity, std::align_val_t(c.metadata.alignOfComponent));

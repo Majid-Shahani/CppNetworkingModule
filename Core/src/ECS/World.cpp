@@ -15,9 +15,9 @@ namespace Carnival::ECS {
 			CL_CORE_ASSERT(it->second.arch->getComponentIDs() == components, "Hash Collision");
 		}
 		
-		Entity e = m_EntityManager.create(id, 0);
+		Entity e = m_EntityManager.create(nullptr, 0);
 		uint32_t index = it->second.arch->addEntity(e);
-		m_EntityManager.updateEntityLocation(e, id, index);
+		m_EntityManager.updateEntityLocation(e, it->second.arch.get(), index);
 		
 		return e;
 	}
@@ -25,9 +25,9 @@ namespace Carnival::ECS {
 	{
 		const auto& rec = m_EntityManager.get(e);
 		
-		auto [entity, index] = m_Archetypes.at(rec.archetypeID).arch->removeEntityAt(rec.index);
+		auto [entity, index] = m_Archetypes.at(rec.pArchetype->getID()).arch->removeEntityAt(rec.index);
 		if (e != entity) {
-			m_EntityManager.updateEntityLocation(entity, rec.archetypeID, index);
+			m_EntityManager.updateEntityLocation(entity, rec.pArchetype, index);
 		}
 		m_EntityManager.destroyEntity(e);
 	}
