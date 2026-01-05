@@ -12,55 +12,51 @@ namespace Carnival::ECS {
 
 	Entity EntityManager::create(Archetype* archetype, uint32_t index, EntityStatus status) {
 		status = static_cast<EntityStatus>(status | ALIVE);
-		if (!s_FreeIDs.empty()) {
-			Entity id = s_FreeIDs[s_FreeIDs.size() - 1];
-			s_FreeIDs.pop_back();
-			s_Entries[id] = { archetype, index, status };
+		if (!m_FreeIDs.empty()) {
+			Entity id = m_FreeIDs[m_FreeIDs.size() - 1];
+			m_FreeIDs.pop_back();
+			m_Entries[id] = { archetype, index, status };
 			return id;
 		}
-		s_Entries.push_back({ archetype, index, status });
-		return s_NextID++;
+		m_Entries.push_back({ archetype, index, status });
+		return m_Entries.size() - 1;
 	}
 
 	const EntityEntry& EntityManager::get(Entity e) {
-		CL_CORE_ASSERT(e < s_NextID, "Entity access for out of bounds entity requested");
-		return s_Entries[e];
+		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
+		CL_CORE_ASSERT(m_Entries[e].status | ALIVE, "get called for dead entity");
+		return m_Entries[e];
 	}
 
 	void EntityManager::updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status) {
-		if (e >= s_NextID) return;
-		if (s_Entries[e].status == DEAD) {
-			auto it = std::find(s_FreeIDs.begin(), s_FreeIDs.end(), e);
-			if (it != s_FreeIDs.end()) {
-				std::iter_swap(it, s_FreeIDs.end() - 1);
-				s_FreeIDs.pop_back();
-			}
-		}
+		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
+		CL_CORE_ASSERT(m_Entries[e].status | ALIVE, "Update called for dead entity");
 		status = static_cast<EntityStatus>(status | ALIVE);
-		s_Entries[e] = { archetype, index, status };
+		m_Entries[e] = { archetype, index, status };
 	}
 	void EntityManager::updateEntityLocation(Entity e, Archetype* archetype, uint32_t index) {
-		if (e >= s_NextID) return;
-		s_Entries[e].archetype = archetype;
-		s_Entries[e].index = index;
+		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
+		CL_CORE_ASSERT(m_Entries[e].status | ALIVE, "Update Location called for dead entity");
+		m_Entries[e].archetype = archetype;
+		m_Entries[e].index = index;
 	}
 
 	void EntityManager::destroyEntity(Entity e) {
-		if (e >= s_NextID) return;
-		s_Entries[e] = { nullptr, 0, EntityStatus::DEAD };
-		s_FreeIDs.push_back(e);
+		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
+		CL_CORE_ASSERT(m_Entries[e].status | ALIVE, "Destroy called for dead entity");
+		m_Entries[e] = { nullptr, 0, EntityStatus::DEAD };
+		m_FreeIDs.push_back(e);
 	}
 	void EntityManager::destroyEntities(std::span<const Entity> e) {
 		for (const Entity entity : e) {
-			if (entity >= s_NextID) continue;
-			s_Entries[entity] = { nullptr, 0, EntityStatus::DEAD };
-			s_FreeIDs.push_back(entity);
+			CL_CORE_ASSERT(entity < m_Entries.size(), "Entity access for out of bounds entity requested");
+			m_Entries[entity] = { nullptr, 0, EntityStatus::DEAD };
+			m_FreeIDs.push_back(entity);
 		}
 	}
 	void EntityManager::reset() {
-		s_FreeIDs.clear();
-		s_Entries.clear();
-		s_NextID = 1;
+		m_FreeIDs.clear();
+		m_Entries.clear();
 	}
 
 	// ================================================================================================ //

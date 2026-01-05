@@ -218,7 +218,9 @@ namespace Carnival::ECS {
 			ComponentRange(std::vector<InnerLocalIter<P, C>>&& local, std::vector<InnerNetworkedIter<P, C>>&& networks)
 				: locals{ std::move(local) }, networkeds{ std::move(networks) } {}
 
-			Iterator begin() { return Iterator{ locals, networkeds, 0, !(locals.size() == 0), (locals.size() == 0 && networkeds.size() == 0)}; }
+			Iterator begin() { 
+				return Iterator{ locals, networkeds, 0, !(locals.size() == 0), (locals.size() == 0 && networkeds.size() == 0)}; 
+			}
 			Iterator end() { return Iterator{ locals, networkeds, UINT64_MAX, false, true };	}
 		private:
 			std::vector<InnerLocalIter<P, C>> locals;
@@ -251,4 +253,5 @@ namespace Carnival::ECS {
 		std::vector<Archetype>	m_onUpdateArchetypes;
 		std::vector<Archetype>	m_localArchetypes;
 	};
+
 }

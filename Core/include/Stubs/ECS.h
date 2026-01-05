@@ -33,21 +33,20 @@ namespace Carnival::ECS {
 	// Not Thread safe, Change
 	class EntityManager {
 	public:
-		static Entity create(Archetype* archetype, uint32_t index, EntityStatus status);
+		Entity create(Archetype* archetype, uint32_t index, EntityStatus status);
 		
-		static const EntityEntry& get(Entity e);
+		const EntityEntry& get(Entity e);
 
-		static void updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status);
-		static void updateEntityLocation(Entity e, Archetype* archetype, uint32_t index);
+		void updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status);
+		void updateEntityLocation(Entity e, Archetype* archetype, uint32_t index);
 
-		static void destroyEntity(Entity e);
-		static void destroyEntities(std::span<const Entity> e);
-		static void reset();
+		void destroyEntity(Entity e);
+		void destroyEntities(std::span<const Entity> e);
+		void reset();
 	private:
-		EntityManager() = default;
-		static inline std::vector<Entity> s_FreeIDs{};
-		static inline std::vector<EntityEntry> s_Entries{};
-		static inline Entity s_NextID{};
+		std::vector<Entity> m_FreeIDs{};
+		std::vector<EntityEntry> m_Entries{};
+		Entity m_NextID{};
 	};
 
 	struct ComponentMetadata {
