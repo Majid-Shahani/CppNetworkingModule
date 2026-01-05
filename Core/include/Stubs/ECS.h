@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <vector>
 #include <span>
-#include <stdexcept>
 #include <memory>
+#include <utility>
 
 #include <CNM/utils.h>
 
@@ -176,39 +176,40 @@ namespace Carnival::ECS {
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg, 
 			std::span<const uint64_t> sortedComponentIDs, uint64_t archetypeID, uint32_t initialCapacity = 5);
 
-		std::vector<uint64_t>	getComponentIDs() const;
+		std::vector<uint64_t>			getComponentIDs() const;
 
-		uint32_t				addEntity(Entity id);
-		uint32_t				addEntity(Entity id, const Archetype& src, uint32_t srcIndex);
+		uint32_t						addEntity(Entity id);
+		uint32_t						addEntity(Entity id, const Archetype& src, uint32_t srcIndex);
 
-		uint32_t				removeEntity(Entity entity);
-		uint32_t				removeEntityAt(uint32_t index);
-		uint32_t				removeLastEntity();
+		std::pair<uint32_t, uint32_t>	removeEntity(Entity entity);
+		std::pair<uint32_t, uint32_t>	removeEntityAt(uint32_t index);
+		std::pair<uint32_t, uint32_t>	removeLastEntity();
 
-		inline uint32_t			getEntityCount() const { return m_EntityCount; }
-		inline Entity			getEntity(uint32_t index) const { return m_Entities[index]; }
+		inline uint32_t					getEntityCount() const { return m_EntityCount; }
+		inline Entity					getEntity(uint32_t index) const { return m_Entities[index]; }
 
-		inline bool				testAndSetEntityDirty(uint32_t index) noexcept {
+		inline bool						testAndSetEntityDirty(uint32_t index) noexcept {
 			//if (index >= m_Entities.size()) throw std::runtime_error("Index out of bounds.");
 			return true;
 		}
-		inline void				clearEntityDirty(uint32_t index) {
+		inline void						clearEntityDirty(uint32_t index) {
 			if (index >= m_Entities.size()) throw std::runtime_error("Index out of bounds.");
 		}
 
-		inline uint32_t			getComponentIndex(uint64_t cID) const {
+		inline uint32_t					getComponentIndex(uint64_t cID) const {
 			for (int i{}; i < m_Components.size(); i++) if (m_Components[i].metadata.componentTypeID == cID) return i;
 			return UINT32_MAX;
 		}
-		inline void const*		readComponentData(uint32_t index) const { 
+		inline void const*				readComponentData(uint32_t index) const { 
 			if (index >= m_Components.size()) return nullptr;
 			return m_Components[index].pComponentData;
 		}
-		inline void*			writeComponentData(uint32_t index) {
+		inline void*					writeComponentData(uint32_t index) {
 			if (index >= m_Components.size()) return nullptr;
 			return m_Components[index].pComponentData;
 		}
-		inline uint64_t			getID() const { return m_ArchetypeID; }
+		inline uint64_t					getID() const { return m_ArchetypeID; }
+
 		// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
 		static uint64_t hashArchetypeID(std::span<const uint64_t> sortedCompIDs);
 

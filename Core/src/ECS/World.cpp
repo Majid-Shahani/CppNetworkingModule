@@ -24,8 +24,11 @@ namespace Carnival::ECS {
 	void World::destroyEntity(Entity e)
 	{
 		const auto& rec = m_EntityManager.get(e);
-		
-
+		auto [entity, index] = m_Archetypes[rec.archetypeID].arch->removeEntityAt(rec.index);
+		if (e != entity) {
+			m_EntityManager.updateEntityLocation(entity, rec.archetypeID, index);
+		}
+		m_EntityManager.destroyEntity(e);
 	}
 	void World::startUpdate()
 	{
