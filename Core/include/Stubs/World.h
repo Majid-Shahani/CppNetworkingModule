@@ -237,10 +237,10 @@ namespace Carnival::ECS {
 		void registerComponents() {	(m_Registry.registerComponent<Ts>(), ...); }
 		
 		template <ECSComponent... Ts>
-		void addComponentToEntity(Entity e);
+		void addComponentsToEntity(Entity e);
 		
 		template <ECSComponent... Ts>
-		void removeComponentFromEntity(Entity e);
+		void removeComponentsFromEntity(Entity e);
 
 		template <QueryPolicy P, ECSComponent T>
 		ComponentRange<P, T> query();
@@ -248,6 +248,9 @@ namespace Carnival::ECS {
 		void startUpdate();
 		void endUpdate();
 	private:
+		void addCompImpl(Entity e, uint64_t compID);
+		void removeCompImpl(Entity e, uint64_t compID);
+		void updateEntity(Entity e, uint64_t archID, uint32_t index);
 	private:
 		EntityManager m_EntityManager;
 		std::unordered_map<uint64_t, ArchetypeRecord> m_Archetypes;

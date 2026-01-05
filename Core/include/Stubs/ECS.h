@@ -5,6 +5,7 @@
 #include <vector>
 #include <span>
 #include <memory>
+#include <stdexcept>
 #include <utility>
 
 #include <CNM/utils.h>
@@ -236,6 +237,8 @@ namespace Carnival::ECS {
 			std::span<const uint64_t> IDs, uint64_t ID, NetworkFlags flag, uint32_t initialCapacity = 5)
 			: arch{ Archetype::create(metadataReg, IDs, ID, initialCapacity)}, flags{flag} {
 		}
+		//ArchetypeRecord() : arch{ nullptr }, flags{ NetworkFlags::LOCAL } {}
+
 		std::unique_ptr<Archetype> arch;
 		NetworkFlags flags;
 		// 7 bytes of padding
