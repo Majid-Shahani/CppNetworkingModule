@@ -19,7 +19,7 @@ namespace Carnival::ECS {
 			return id;
 		}
 		m_Entries.push_back({ archetype, index, status });
-		return m_Entries.size() - 1;
+		return static_cast<Entity>(m_Entries.size() - 1);
 	}
 
 	const EntityEntry& EntityManager::get(Entity e) {
@@ -176,28 +176,18 @@ namespace Carnival::ECS {
 		return m_EntityCount++;
 	}
 
-	void Archetype::removeEntity(Entity entity) {
+	uint32_t Archetype::removeEntity(Entity entity) {
 		for (uint32_t i{}; i < m_EntityCount; i++) {
-			if (m_Entities[i] == entity) {
-				if (i == m_EntityCount - 1) {
-					removeLastEntity();
-					return;
-				}
-				else {
-					removeEntityAt(i);
-					return;
-				}
-			}
+			if (m_Entities[i] == entity) return removeEntityAt(i);
 		}
+		if (m_Entities[m_EntityCount] == entity) return removeLastEntity();
 	}
 	// Possibly Destructors should not be called, if moved / copied entity will be come invalid after destruction.
-	void Archetype::removeEntityAt(uint32_t index) {
-		if (m_EntityCount == 0 || index >= m_EntityCount) return;
+	// RETURNS INDEX OF entity to be updated in entity manager to the index passed in
+	uint32_t Archetype::removeEntityAt(uint32_t index) {
+		CL_CORE_ASSERT(index < m_EntityCount, "remove called on out of bounds index");
 		// Swap and Destruct Components
-		if (index == m_EntityCount - 1) {
-			removeLastEntity();
-			return;
-		}
+		if (index == m_EntityCount - 1) return removeLastEntity();
 
 		for (auto& c : m_Components) {
 			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + (index * c.metadata.sizeOfComponent), 1);
@@ -210,16 +200,14 @@ namespace Carnival::ECS {
 		// Update Entity Registry
 		m_Entities[index] = m_Entities[m_EntityCount - 1];
 		m_Entities.pop_back();
-		EntityManager::updateEntityLocation(m_Entities[index], this, index);
-
-		m_EntityCount--;
+		return --m_EntityCount;
 	}
-	void Archetype::removeLastEntity() {
+	uint32_t Archetype::removeLastEntity() {
 		for (auto& c : m_Components) {
 			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent), 1);
 		}
 		m_Entities.pop_back();
-		m_EntityCount--;
+		return --m_EntityCount;
 	}
 
 	Archetype::~Archetype() noexcept {

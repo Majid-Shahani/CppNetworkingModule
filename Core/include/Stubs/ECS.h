@@ -130,9 +130,9 @@ namespace Carnival::ECS {
 		uint32_t				addEntity(Entity id);
 		uint32_t				addEntity(Entity id, const Archetype& src, uint32_t srcIndex);
 
-		void					removeEntity(Entity entity);
-		void					removeEntityAt(uint32_t index);
-		void					removeLastEntity();
+		uint32_t				removeEntity(Entity entity);
+		uint32_t				removeEntityAt(uint32_t index);
+		uint32_t				removeLastEntity();
 
 		inline uint32_t			getEntityCount() const { return m_EntityCount; }
 		inline Entity			getEntity(uint32_t index) const { return m_Entities[index]; }

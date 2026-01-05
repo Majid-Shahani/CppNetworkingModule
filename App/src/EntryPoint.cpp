@@ -105,13 +105,15 @@ int main() {
 		8);
 	if (!arch) throw std::runtime_error("Failed to Create Archetype");
 
+	EntityManager entity_manager;
+
 	for (int i{}; i < 10; i++) {
-		Entity e = EntityManager::create(arch.get(), 0, static_cast<EntityStatus>(ALIVE));
+		Entity e = entity_manager.create(arch.get(), 0, static_cast<EntityStatus>(ALIVE));
 		uint32_t index = arch->addEntity(e);
-		EntityManager::updateEntityLocation(e, arch.get(), index);
+		entity_manager.updateEntityLocation(e, arch.get(), index);
 	}
 
-	// ============================================= NETWORK ============================================ //
+	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests
 
@@ -123,7 +125,7 @@ int main() {
 	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked 
 	PositionMoverSystem(*arch, 1.0f);
 
-
+	// ============================================ CLEANUP =========================================== //
 	/*
 	* client code :
 	*   request connection

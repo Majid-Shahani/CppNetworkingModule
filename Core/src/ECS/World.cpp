@@ -3,11 +3,6 @@
 
 namespace Carnival::ECS {
 	template<ECSComponent ...Ts>
-	bool World::registerComponent()
-	{
-		return false;
-	}
-	template<ECSComponent ...Ts>
 	void World::addComponentToEntity(Entity e)
 	{
 	}

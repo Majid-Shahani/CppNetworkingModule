@@ -233,7 +233,9 @@ namespace Carnival::ECS {
 		void destroyEntity(Entity e);
 
 		template<ECSComponent... Ts>
-		bool registerComponent();
+		void registerComponents() {
+			(m_Registry.registerComponent<Ts>(), ...);
+		}
 		
 		template <ECSComponent... Ts>
 		void addComponentToEntity(Entity e);
@@ -246,6 +248,9 @@ namespace Carnival::ECS {
 
 		void startUpdate();
 		void endUpdate();
+		
+	private:
+
 
 	private:
 		ComponentRegistry		m_Registry;
