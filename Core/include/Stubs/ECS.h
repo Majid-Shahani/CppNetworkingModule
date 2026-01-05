@@ -46,7 +46,6 @@ namespace Carnival::ECS {
 	private:
 		std::vector<Entity> m_FreeIDs{};
 		std::vector<EntityEntry> m_Entries{};
-		Entity m_NextID{};
 	};
 
 	struct ComponentMetadata {

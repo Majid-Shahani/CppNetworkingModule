@@ -249,6 +249,7 @@ namespace Carnival::ECS {
 
 	private:
 		ComponentRegistry		m_Registry;
+		EntityManager			m_EntityManager;
 		std::vector<Archetype>	m_onTickArchetypes;
 		std::vector<Archetype>	m_onUpdateArchetypes;
 		std::vector<Archetype>	m_localArchetypes;

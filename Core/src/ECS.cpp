@@ -24,32 +24,32 @@ namespace Carnival::ECS {
 
 	const EntityEntry& EntityManager::get(Entity e) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
-		CL_CORE_ASSERT(m_Entries[e].status | ALIVE, "get called for dead entity");
+		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "get called for dead entity");
 		return m_Entries[e];
 	}
 
 	void EntityManager::updateEntity(Entity e, Archetype* archetype, uint32_t index, EntityStatus status) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
-		CL_CORE_ASSERT(m_Entries[e].status | ALIVE, "Update called for dead entity");
-		status = static_cast<EntityStatus>(status | ALIVE);
+		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "Update called for dead entity");
 		m_Entries[e] = { archetype, index, status };
 	}
 	void EntityManager::updateEntityLocation(Entity e, Archetype* archetype, uint32_t index) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
-		CL_CORE_ASSERT(m_Entries[e].status | ALIVE, "Update Location called for dead entity");
+		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "Update Location called for dead entity");
 		m_Entries[e].archetype = archetype;
 		m_Entries[e].index = index;
 	}
 
 	void EntityManager::destroyEntity(Entity e) {
 		CL_CORE_ASSERT(e < m_Entries.size(), "Entity access for out of bounds entity requested");
-		CL_CORE_ASSERT(m_Entries[e].status | ALIVE, "Destroy called for dead entity");
+		CL_CORE_ASSERT(m_Entries[e].status & ALIVE, "Destroy called for dead entity");
 		m_Entries[e] = { nullptr, 0, EntityStatus::DEAD };
 		m_FreeIDs.push_back(e);
 	}
 	void EntityManager::destroyEntities(std::span<const Entity> e) {
 		for (const Entity entity : e) {
 			CL_CORE_ASSERT(entity < m_Entries.size(), "Entity access for out of bounds entity requested");
+			CL_CORE_ASSERT(m_Entries[entity].status & ALIVE, "Destroy called for dead entity");
 			m_Entries[entity] = { nullptr, 0, EntityStatus::DEAD };
 			m_FreeIDs.push_back(entity);
 		}
