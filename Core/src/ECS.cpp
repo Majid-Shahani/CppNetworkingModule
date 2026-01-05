@@ -195,7 +195,7 @@ namespace Carnival::ECS {
 		for (auto& c : m_Components) {
 			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent), 1);
 		}
-		Entity e = m_Entities[m_EntityCount];
+		Entity e = m_Entities[m_EntityCount - 1];
 		m_Entities.pop_back();
 		m_EntityCount--;
 		return { e, UINT32_MAX };

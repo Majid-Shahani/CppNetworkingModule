@@ -6,7 +6,7 @@
 namespace Carnival::ECS {
 	Entity World::createEntity(std::vector<uint64_t> components, NetworkFlags flag)
 	{
-		std::sort(components.begin(), components.end());
+		CL_CORE_ASSERT(std::is_sorted(components.begin(), components.end()), "Component ID List must be sorted.");
 		uint64_t id{ Archetype::hashArchetypeID(components) };
 		
 		auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, flag, 5);

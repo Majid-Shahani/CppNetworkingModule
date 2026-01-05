@@ -55,6 +55,8 @@ int main() {
 	w.registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
 	Entity onTickEntity = w.createEntity<Position, OnTickNetworkComponent>();
 	Entity onUpdateEntity = w.createEntity<Position, OnUpdateNetworkComponent>();
+	w.removeComponentsFromEntity<OnUpdateNetworkComponent>(onUpdateEntity);
+	w.addComponentsToEntity< OnUpdateNetworkComponent>(onUpdateEntity);
 	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests

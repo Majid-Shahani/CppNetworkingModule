@@ -1,7 +1,7 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
-#include <type_traits>
 #include <span>
 #include <unordered_map>
 
@@ -56,7 +56,7 @@ namespace Carnival::ECS {
 			}
 
 			InnerLocalIter& operator++() noexcept {
-				CL_CORE_ASSRT(current < end, "Incrementing End Iterator.");
+				CL_CORE_ASSERT(current < end, "Incrementing End Iterator.");
 				++current;
 				return *this;
 			}
@@ -238,6 +238,7 @@ namespace Carnival::ECS {
 			IDs.reserve(sizeof...(Ts));
 
 			(IDs.push_back(Ts::ID), ...);
+			std::sort(IDs.begin(), IDs.end());
 
 			return createEntity(IDs, getNetFlag(IDs));
 		}
@@ -256,6 +257,7 @@ namespace Carnival::ECS {
 
 			components.reserve(components.size() + sizeof...(Ts));
 			(components.push_back(Ts::ID), ...);
+			std::sort(components.begin(), components.end());
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
@@ -265,7 +267,7 @@ namespace Carnival::ECS {
 				CL_CORE_ASSERT(it->second.arch->getComponentIDs() == components, "Hash Collision");
 			}
 
-			uint32_t index = it->second.arch->addEntity(e, rec.pArchetype, rec.index);
+			uint32_t index = it->second.arch->addEntity(e, *(rec.pArchetype), rec.index);
 			auto [swappedEntity, i] = rec.pArchetype->removeEntityAt(rec.index);
 			if (swappedEntity != e) {
 				m_EntityManager.updateEntityLocation(swappedEntity, rec.pArchetype, i);
@@ -282,6 +284,7 @@ namespace Carnival::ECS {
 			// graph later :(
 
 			(components.erase(std::remove(components.begin(), components.end(), Ts::ID), components.end()), ...);
+			std::sort(components.begin(), components.end());
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
@@ -291,7 +294,7 @@ namespace Carnival::ECS {
 				CL_CORE_ASSERT(it->second.arch->getComponentIDs() == components, "Hash Collision");
 			}
 
-			uint32_t index = it->second.arch->addEntity(e, rec.pArchetype, rec.index);
+			uint32_t index = it->second.arch->addEntity(e, *(rec.pArchetype), rec.index);
 			auto [swappedEntity, i] = rec.pArchetype->removeEntityAt(rec.index);
 			if (swappedEntity != e) {
 				m_EntityManager.updateEntityLocation(swappedEntity, rec.pArchetype, i);
