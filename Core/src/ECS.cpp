@@ -1,5 +1,7 @@
 #include <src/CNMpch.hpp>
 
+#include <ranges>
+
 #include <Stubs/ECS.h>
 #include <CNM/utils.h>
 #include <CNM/macros.h>
@@ -113,6 +115,7 @@ namespace Carnival::ECS {
 	
 	std::unique_ptr<Archetype> Archetype::create(const ComponentRegistry& metadataReg,
 		std::span<const uint64_t> sortedComponentIDs, uint64_t pArchetype, uint32_t initialCapacity) {
+		CL_CORE_ASSERT(std::ranges::is_sorted(sortedComponentIDs), "Component ID List must be sorted.");
 		// Build Component columns and validate componentIDs
 		std::vector<ComponentColumn> columns;
 		columns.reserve(sortedComponentIDs.size());
@@ -235,6 +238,7 @@ namespace Carnival::ECS {
 
 	// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
 	uint64_t Archetype::hashArchetypeID(std::span<const uint64_t> compIDs) {
+		CL_CORE_ASSERT(std::ranges::is_sorted(compIDs), "IDs must be sorted");
 		uint64_t hash = utils::FNV64_OFFSET_BASIS;
 		for (auto id : compIDs) {
 			for (uint64_t i{}; i < 8; i++) {

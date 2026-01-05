@@ -10,12 +10,14 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <ranges>
 #include <shared_mutex>
 #include <span>
 #include <string>
 #include <stdexcept>
 #include <vector>
 #include <unordered_map>
+#include <utility>
 
 #ifdef CL_Platform_Windows
 #include <WinSock2.h>

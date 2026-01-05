@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <ranges>
 #include <cstdint>
 #include <span>
 #include <unordered_map>
@@ -239,6 +240,7 @@ namespace Carnival::ECS {
 
 			(IDs.push_back(Ts::ID), ...);
 			std::sort(IDs.begin(), IDs.end());
+			CL_CORE_ASSERT(std::ranges::adjacent_find(IDs) != IDs.end(), "Cannot Add duplicate components");
 
 			return createEntity(IDs, getNetFlag(IDs));
 		}
@@ -258,6 +260,7 @@ namespace Carnival::ECS {
 			components.reserve(components.size() + sizeof...(Ts));
 			(components.push_back(Ts::ID), ...);
 			std::sort(components.begin(), components.end());
+			CL_CORE_ASSERT(std::ranges::adjacent_find(components) != components.end(), "Cannot have duplicate components");
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
@@ -285,6 +288,7 @@ namespace Carnival::ECS {
 
 			(components.erase(std::remove(components.begin(), components.end(), Ts::ID), components.end()), ...);
 			std::sort(components.begin(), components.end());
+			CL_CORE_ASSERT(std::ranges::adjacent_find(components) != components.end(), "Cannot have duplicate components");
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
@@ -310,13 +314,20 @@ namespace Carnival::ECS {
 	private:
 		Entity createEntity(std::vector<uint64_t> components, NetworkFlags flag = NetworkFlags::LOCAL);
 		
-		// Random Behavior if has both components
 		NetworkFlags getNetFlag(std::span<uint64_t> compIDs) {
+			CL_CORE_ASSERT(!_debug_isDoubleNetworked(compIDs), "Cannot have both networking types");
 			for (const auto id : compIDs) {
 				if (id == OnTickNetworkComponent::ID) return NetworkFlags::ON_TICK;
 				else if (id == OnUpdateNetworkComponent::ID) return NetworkFlags::ON_UPDATE;
 			}
 			return NetworkFlags::LOCAL;
+		}
+		bool _debug_isDoubleNetworked(std::span<uint64_t> compIDs) {
+			for (const auto id : compIDs)
+				if (id == OnTickNetworkComponent::ID)
+					for (const auto id : compIDs)
+						if (id == OnUpdateNetworkComponent::ID) return true;
+			return false;
 		}
 	private:
 		EntityManager m_EntityManager;
