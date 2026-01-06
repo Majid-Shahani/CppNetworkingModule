@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <CNM/utils.h>
+#include <CNM/macros.h>
 
 namespace Carnival::ECS {
 	class Archetype;
@@ -190,16 +191,25 @@ namespace Carnival::ECS {
 		inline Entity					getEntity(uint32_t index) const { return m_Entities[index]; }
 
 		inline bool						testAndSetEntityDirty(uint32_t index) noexcept {
-			//if (index >= m_Entities.size()) throw std::runtime_error("Index out of bounds.");
-			return true;
+			CL_CORE_ASSERT(index < m_EntityCount, "Index out of bounds");
+			auto comp = (static_cast<OnUpdateNetworkComponent*>(getComponentData(OnUpdateNetworkComponent::ID)) + index);
+			bool res = comp->dirty;
+			comp->dirty = true;
+			return res;
 		}
 		inline void						clearEntityDirty(uint32_t index) {
-			if (index >= m_Entities.size()) throw std::runtime_error("Index out of bounds.");
+			CL_CORE_ASSERT(index < m_EntityCount, "Index out of bounds");
+			auto comp = (static_cast<OnUpdateNetworkComponent*>(getComponentData(OnUpdateNetworkComponent::ID)) + index);
+			comp->dirty = false;
 		}
 
 		inline uint32_t					getComponentIndex(uint64_t cID) const {
 			for (int i{}; i < m_Components.size(); i++) if (m_Components[i].metadata.componentTypeID == cID) return i;
 			return UINT32_MAX;
+		}
+		inline void*					getComponentData(uint64_t cID){
+			for (const auto& c : m_Components) if (c.metadata.componentTypeID == cID) return c.pComponentData;
+			return nullptr;
 		}
 		inline void const*				readComponentData(uint32_t index) const { 
 			if (index >= m_Components.size()) return nullptr;

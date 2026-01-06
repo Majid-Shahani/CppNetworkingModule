@@ -32,8 +32,12 @@ namespace Carnival::ECS {
 	}
 	void World::startUpdate()
 	{
+		// update ecs with replication
+		// phase barrier
 	}
 	void World::endUpdate()
 	{
+		// if any archetype has 0 entities, delete.
+		// signal read only phase
 	}
 }

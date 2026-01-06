@@ -23,14 +23,18 @@ namespace Carnival::ECS {
 	private:
 		template<QueryPolicy P, ECSComponent C>
 		struct InnerLocalIter {
-			InnerLocalIter(C* base, C* end) : current{ base }, end{ end } {}
+			InnerLocalIter(C* base, C* end) : current{ base }, end{ end } {
+				CL_CORE_ASSERT(base <= end, "base pointer has to be before end pointer");
+			}
 
 			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
 			
 			const C& read() const noexcept {
+				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				return *current;
 			}
 			C& write() noexcept requires(writable) {
+				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				return *current;
 			}
 
@@ -50,10 +54,10 @@ namespace Carnival::ECS {
 			}
 
 			bool operator!=(const InnerLocalIter& other) const noexcept {
-				return current != other.current; // && arch != other.arch;
+				return current != other.current;
 			}
 			bool operator==(const InnerLocalIter& other) const noexcept {
-				return current == other.current; // && arch == other.arch;
+				return current == other.current;
 			}
 
 			InnerLocalIter& operator++() noexcept {
@@ -62,7 +66,7 @@ namespace Carnival::ECS {
 				return *this;
 			}
 
-			bool done() const noexcept { return current == end; }
+			bool done() const noexcept { return current >= end; }
 
 		private:
 			C* current;
@@ -72,22 +76,26 @@ namespace Carnival::ECS {
 		template<QueryPolicy P, ECSComponent C>
 		struct InnerNetworkedIter {
 			InnerNetworkedIter(C* base, C* end, Archetype& archetype)
-				: current{ base }, end{ end }, arch{ archetype }, index{ arch.getEntityCount() - (end - current) } {}
+				: current{ base }, end{ end }, arch{ archetype }, index{ arch.getEntityCount() - static_cast<uint64_t>(end - current) } {
+				CL_CORE_ASSERT(base <= end, "base pointer has to be before end pointer");
+			}
 
 			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
 
 			const C& read() const noexcept {
+				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				return *current;
 			}
 			C& write() noexcept requires(writable) {
-				if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
+				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
+				if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))) std::print("Replication Record!\n"); // Submit Replication
 				return *current;
 			}
 
 			decltype(auto) operator*() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				if constexpr (writable) {
-					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
+					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))) std::print("Replication Record!\n"); // Submit Replication
 					return *current;
 				}
 				else
@@ -96,7 +104,7 @@ namespace Carnival::ECS {
 			decltype(auto) operator->() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				if constexpr (writable) {
-					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))); // Submit Replication
+					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))) std::print("Replication Record!\n"); // Submit Replication
 					return current;
 				}
 				else
@@ -104,10 +112,10 @@ namespace Carnival::ECS {
 			}
 
 			bool operator!=(const InnerNetworkedIter& other) const noexcept {
-				return current != other.current; // && arch != other.arch;
+				return current != other.current;
 			}
 			bool operator==(const InnerNetworkedIter& other) const noexcept {
-				return current == other.current;// && arch == other.arch;
+				return current == other.current;
 			}
 
 			InnerNetworkedIter& operator++() noexcept {
@@ -117,7 +125,7 @@ namespace Carnival::ECS {
 				return *this;
 			}
 
-			bool done() const noexcept { return current == end; }
+			bool done() const noexcept { return current >= end; }
 
 		private:
 			C* current;
@@ -170,24 +178,33 @@ namespace Carnival::ECS {
 				if (onLocal) {
 					++localChunks[currentChunk];
 					if (localChunks[currentChunk].done()) {
-						++currentChunk;
-						if (currentChunk >= localChunks.size()) {
-							currentChunk = 0;
-							onLocal = false;
-							if (networkedChunks.size() == 0) isDone = true;
-						}
+						do {
+							++currentChunk;
+							if (currentChunk >= localChunks.size()) {
+								currentChunk = 0;
+								onLocal = false;
+								if (networkedChunks.size() == 0) isDone = true;
+							}
+						} while (onLocal && localChunks[currentChunk].done());
 					}
 				}
 				else {
 					++networkedChunks[currentChunk];
 					if (networkedChunks[currentChunk].done()) {
-						++currentChunk;
-						if (currentChunk >= networkedChunks.size()) isDone = true;
+						do {
+							++currentChunk;
+							if (currentChunk >= networkedChunks.size()) isDone = true;
+						} while (!isDone && networkedChunks[currentChunk].done());
 					}
 				}
 				return *this;
 			}
-			
+			OuterIter operator++(int) noexcept {
+				auto tmp = *this;
+				++(*this);
+				return tmp;
+			}
+
 			bool operator!=(const OuterIter& other) const noexcept {
 				if (isDone && other.done()) return false;
 				else if (!isDone && !other.done()) {
@@ -221,18 +238,33 @@ namespace Carnival::ECS {
 				: locals{ std::move(local) }, networkeds{ std::move(networks) } {}
 
 			Iterator begin() { 
-				return Iterator{ locals, networkeds, 0, !(locals.size() == 0), (locals.size() == 0 && networkeds.size() == 0)}; 
+				uint64_t chunk = 0;
+				bool onLocal = true;
+				bool doneFlag = false;
+
+				// Skip empty local chunks
+				while (chunk < locals.size() && locals[chunk].done()) ++chunk;
+
+				if (chunk < locals.size()) {
+					onLocal = true;
+				}
+				else {
+					// switch to networked
+					chunk = 0;
+					onLocal = false;
+					while (chunk < networkeds.size() && networkeds[chunk].done()) ++chunk;
+
+					if (chunk >= networkeds.size()) doneFlag = true;
+				}
+				return Iterator{ locals, networkeds, chunk, onLocal, doneFlag };
 			}
-			Iterator end() { return Iterator{ locals, networkeds, UINT64_MAX, false, true };	}
+			Iterator end() { return Iterator{ locals, networkeds, 0, false, true }; }
 		private:
 			std::vector<InnerLocalIter<P, C>> locals;
 			std::vector<InnerNetworkedIter<P, C>> networkeds;
 		};
 
 	public:
-		// TODO: Rule of 5
-
-
 		template <ECSComponent... Ts>
 		Entity createEntity() {
 			std::vector<uint64_t> IDs;
@@ -307,7 +339,26 @@ namespace Carnival::ECS {
 		}
 
 		template <QueryPolicy P, ECSComponent T>
-		ComponentRange<P, T> query();
+		ComponentRange<P, T> query() {
+			std::vector<InnerLocalIter<P, T>> locals;
+			std::vector<InnerNetworkedIter<P, T>> nets;
+
+			for (auto& [id, rec] : m_Archetypes) {
+				Archetype& arch = *rec.arch;
+				if (arch.getEntityCount() == 0) continue;
+				void* pData = arch.getComponentData(T::ID);
+				if (pData == nullptr) continue;
+
+				auto cData = static_cast<T*>(pData);
+				if (rec.flags == NetworkFlags::ON_UPDATE) {
+					nets.emplace_back(cData, cData + arch.getEntityCount(), arch);
+				}
+				else {
+					locals.emplace_back(cData, cData + arch.getEntityCount());
+				}
+			}
+			return ComponentRange<P, T>(std::move(locals), std::move(nets));
+		}
 
 		void startUpdate();
 		void endUpdate();

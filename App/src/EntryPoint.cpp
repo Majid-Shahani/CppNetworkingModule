@@ -33,15 +33,18 @@ struct Position {
 	}
 };
 
-void PositionMoverSystem(Archetype& arch, float delta) {
-	uint32_t index = arch.getComponentIndex(Position::ID);
-	Position* pos = static_cast<Position*>(arch.writeComponentData(index));
-	uint32_t count = arch.getEntityCount();
+void PositionMoverSystem(World& w, float delta) {
+	auto query = w.query<QueryPolicy::RW, Position>();
+	/*
+	for (auto it = query.begin(); it != query.end(); ++it) {
+		it.write().x = it.read().x + delta;
 
-	for (uint32_t i{}; i < count; i++) {
-		pos[i].x += delta;
-		auto e = arch.getEntity(i);
-		std::print("Entity: {}, Marked Dirty. Value: {}\n", e, pos[i].x);
+		std::print("Marked Dirty. Value: {}\n", it.read().x);
+	}
+	*/
+	int i{};
+	for (const auto& c : query) {
+		c.x;
 	}
 }
 
@@ -67,7 +70,7 @@ int main() {
 
 	// =========================================== Main Loop ========================================= //
 	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked 
-	
+	PositionMoverSystem(w, 1);
 
 	// ============================================ CLEANUP =========================================== //
 	/*
