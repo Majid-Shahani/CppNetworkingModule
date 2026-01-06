@@ -14,6 +14,11 @@
 #include <CNM/Replication.h>
 
 namespace Carnival::ECS {
+	class NetIDManager {
+	public:
+	private:
+
+	};
 
 	enum class QueryPolicy : uint8_t {
 		ReadOnly = 0,
@@ -23,6 +28,9 @@ namespace Carnival::ECS {
 		RW = ReadWrite,
 	};
 
+	// ================================================================================================ //
+	// ========================================== World =============================================== //
+	// ================================================================================================ //
 	class World {
 	private:
 		template<QueryPolicy P, ECSComponent C>
@@ -301,6 +309,60 @@ namespace Carnival::ECS {
 			std::vector<InnerNetworkedIter<P, C>> networkeds;
 		};
 
+
+		struct OnUpdateNetworkComponent {
+			uint32_t networkID{};
+			bool dirty{ false };
+			uint8_t padding[3]{};
+
+			static constexpr uint64_t ID{ utils::fnv1a64("OnUpdateNetworkComponent") };
+			static void construct(void* dest, void* world, Entity e) noexcept {
+				auto ptr = static_cast<OnUpdateNetworkComponent*>(dest);
+				World* w = static_cast<World*>(world);
+				ptr->networkID = w->getNetID(e);
+			}
+			static void destruct(void* dest, void* world, Entity e) noexcept {
+				auto ptr = static_cast<OnUpdateNetworkComponent*>(dest);
+				auto w = static_cast<World*>(world);
+				w->freeNetID(ptr->networkID);
+				std::memset(dest, 0, sizeof(OnUpdateNetworkComponent));
+			}
+			static void copy(const void* src, void* dest, uint32_t count) {
+				memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
+			}
+			static void serialize(const void* src, void* out, uint32_t count) {
+				// static_cast<buffer*>(out)->put_uint32(static_cast<const OnUpdateNetworkComponent*>(src)->networkID);
+			}
+			static void deserialize(void* dest, const void* in, uint32_t count) {
+				// static_cast<OnUpdateNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
+			}
+		};
+		struct OnTickNetworkComponent {
+			uint32_t networkID{};
+
+			static constexpr uint64_t ID{ utils::fnv1a64("OnTickNetworkComponent") };
+			static void construct(void* dest, void* world, Entity e) noexcept {
+				auto ptr = static_cast<OnTickNetworkComponent*>(dest);
+				World* w = static_cast<World*>(world);
+				ptr->networkID = w->getNetID(e);
+			}
+			static void destruct(void* dest, void* world, Entity e) noexcept {
+				auto ptr = static_cast<OnTickNetworkComponent*>(dest);
+				auto w = static_cast<World*>(world);
+				w->freeNetID(ptr->networkID);
+				std::memset(dest, 0, sizeof(OnTickNetworkComponent));
+			}
+			static void copy(const void* src, void* dest, uint32_t count) {
+				memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
+			}
+			static void serialize(const void* src, void* out, uint32_t count) {
+				// static_cast<buffer*>(out)->put_uint32(static_cast<const OnTickNetworkComponent*>(src)->networkID);
+			}
+			static void deserialize(void* dest, const void* in, uint32_t count) {
+				// static_cast<OnTickNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
+			}
+		};
+
 	public:
 		template <ECSComponent... Ts>
 		Entity createEntity() {
@@ -333,7 +395,7 @@ namespace Carnival::ECS {
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
-			auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, flag, 5);
+			auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, static_cast<void*>(this), flag, 5);
 			if (!inserted) {
 				CL_CORE_ASSERT(it->second.flags == flag, "Mismatch Network flags on archetype");
 				CL_CORE_ASSERT(it->second.arch->getComponentIDs() == components, "Hash Collision");
@@ -361,7 +423,7 @@ namespace Carnival::ECS {
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
-			auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, flag, 5);
+			auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, static_cast<void*>(this), flag, 5);
 			if (!inserted) {
 				CL_CORE_ASSERT(it->second.flags == flag, "Mismatch Network flags on archetype");
 				CL_CORE_ASSERT(it->second.arch->getComponentIDs() == components, "Hash Collision");
@@ -401,7 +463,10 @@ namespace Carnival::ECS {
 		void endUpdate();
 	private:
 		Entity createEntity(std::vector<uint64_t> components, NetworkFlags flag = NetworkFlags::LOCAL);
-		
+
+		uint32_t getNetID(Entity eID) { return m_IDGen.createID(eID); }
+		void freeNetID(uint32_t netID) { m_IDGen.destroyID(netID); }
+
 		NetworkFlags getNetFlag(std::span<uint64_t> compIDs) {
 			CL_CORE_ASSERT(!_debug_isDoubleNetworked(compIDs), "Cannot have both networking types");
 			for (const auto id : compIDs) {
@@ -419,6 +484,7 @@ namespace Carnival::ECS {
 		}
 	private:
 		EntityManager m_EntityManager;
+		NetIDGenerator m_IDGen;
 		std::unordered_map<uint64_t, ArchetypeRecord> m_Archetypes;
 		ComponentRegistry m_Registry;
 	};

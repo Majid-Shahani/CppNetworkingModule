@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 
+#include <ECS/Archetype.h>
+
 namespace Carnival::Network {
 	struct ComponentRecord {
 		uint64_t archetypeID{};

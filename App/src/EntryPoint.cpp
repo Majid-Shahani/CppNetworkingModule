@@ -14,12 +14,11 @@ struct Position {
 	float x, y, z;
 
 	static constexpr uint64_t ID{ fnv1a64("PositionComponent") };
-	static void construct(void* dest, uint32_t count = 1) noexcept {
+	static void construct(void* dest, void* world, Entity e) noexcept {
 		auto* p = static_cast<Position*>(dest);
-		for (uint64_t i{}; i < count; i++)
-			p[i] = { 0.f, 0.f, 0.f };
+		*p = { 0.f, 0.f, 0.f };
 	}
-	static void destruct(void* dest, uint32_t count = 1) noexcept {
+	static void destruct(void* dest, void* world, Entity e) noexcept {
 		// trivial
 	}
 	static void copy(const void* src, void* dest, uint32_t count = 1) {
@@ -56,11 +55,11 @@ int main() {
 	// =========================================== INIT ECS ========================================= //
 	World w{};
 	w.startUpdate();
-	w.registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
-	Entity onTickEntity = w.createEntity<Position, OnTickNetworkComponent>();
-	Entity onUpdateEntity = w.createEntity<Position, OnUpdateNetworkComponent>();
-	w.removeComponentsFromEntity<OnUpdateNetworkComponent>(onUpdateEntity);
-	w.addComponentsToEntity< OnUpdateNetworkComponent>(onUpdateEntity);
+	w.registerComponents<Position, World::OnTickNetworkComponent, World::OnUpdateNetworkComponent>();
+	Entity onTickEntity = w.createEntity<Position, World::OnTickNetworkComponent>();
+	Entity onUpdateEntity = w.createEntity<Position, World::OnUpdateNetworkComponent>();
+	w.removeComponentsFromEntity<World::OnUpdateNetworkComponent>(onUpdateEntity);
+	w.addComponentsToEntity<World::OnUpdateNetworkComponent>(onUpdateEntity);
 	w.endUpdate();
 	// ============================================ NETWORK =========================================== //
 

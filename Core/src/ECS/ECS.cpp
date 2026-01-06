@@ -62,6 +62,41 @@ namespace Carnival::ECS {
 	}
 
 	// ================================================================================================ //
+	// ==================================== NetIDGenerator ============================================ //
+	// ================================================================================================ //
+
+	uint32_t Carnival::ECS::NetIDGenerator::createID(Entity entityID)
+	{
+		if (!m_FreeIDs.empty()) {
+			uint32_t id = m_FreeIDs[m_FreeIDs.size() - 1];
+			m_FreeIDs.pop_back();
+			m_Entries[id] = { entityID };
+			return id;
+		}
+		m_Entries.push_back({ entityID });
+		return static_cast<uint32_t>(m_Entries.size() - 1);
+	}
+
+	Entity Carnival::ECS::NetIDGenerator::getEntity(uint32_t netID)
+	{
+		CL_CORE_ASSERT(netID < m_Entries.size(), "Entity access for out of bounds entity requested");
+		return m_Entries[netID].entityID;
+	}
+
+	void Carnival::ECS::NetIDGenerator::destroyID(uint32_t netID)
+	{
+		CL_CORE_ASSERT(netID < m_Entries.size(), "Entity access for out of bounds entity requested");
+		m_Entries[netID] = {0};
+		m_FreeIDs.push_back(netID);
+	}
+
+	void Carnival::ECS::NetIDGenerator::reset()
+	{
+		m_Entries.clear();
+		m_FreeIDs.clear();
+	}
+
+	// ================================================================================================ //
 	// ================================== Component Registry ========================================== //
 	// ================================================================================================ //
 
@@ -114,7 +149,7 @@ namespace Carnival::ECS {
 
 	
 	std::unique_ptr<Archetype> Archetype::create(const ComponentRegistry& metadataReg,
-		std::span<const uint64_t> sortedComponentIDs, uint64_t pArchetype, uint32_t initialCapacity) {
+		std::span<const uint64_t> sortedComponentIDs, uint64_t archID, void* pWorld, uint32_t initialCapacity) {
 		CL_CORE_ASSERT(std::ranges::is_sorted(sortedComponentIDs), "Component ID List must be sorted.");
 		// Build Component columns and validate componentIDs
 		std::vector<ComponentColumn> columns;
@@ -125,7 +160,7 @@ namespace Carnival::ECS {
 			columns.emplace_back(metadata, nullptr);
 		}
 
-		return std::unique_ptr<Archetype>(new Archetype(std::move(columns), pArchetype, initialCapacity));
+		return std::unique_ptr<Archetype>(new Archetype(std::move(columns), archID, pWorld, initialCapacity));
 	}
 
 	std::vector<uint64_t> Archetype::getComponentIDs() const {
@@ -140,7 +175,7 @@ namespace Carnival::ECS {
 
 		m_Entities.push_back(id);
 		for (auto& cc : m_Components) {
-			cc.metadata.constructFn(static_cast<uint8_t*>(cc.pComponentData) + (m_EntityCount * cc.metadata.sizeOfComponent), 1);
+			cc.metadata.constructFn(static_cast<uint8_t*>(cc.pComponentData) + (m_EntityCount * cc.metadata.sizeOfComponent), m_World, id);
 		}
 		return m_EntityCount++;
 	}
@@ -162,7 +197,7 @@ namespace Carnival::ECS {
 			if (!isInSrc)
 				dstC.metadata.constructFn(
 					static_cast<uint8_t*>(dstC.pComponentData) + (m_EntityCount * dstC.metadata.sizeOfComponent),
-					1);
+					m_World, id);
 		}
 		return m_EntityCount++;
 	}
@@ -181,11 +216,11 @@ namespace Carnival::ECS {
 		if (index == m_EntityCount - 1) return removeLastEntity();
 
 		for (auto& c : m_Components) {
-			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + (index * c.metadata.sizeOfComponent), 1);
+			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + (index * c.metadata.sizeOfComponent), m_World, m_Entities[index]);
 			c.metadata.copyFn(static_cast<uint8_t*>(c.pComponentData) + (c.metadata.sizeOfComponent * (m_EntityCount - 1)),
 				static_cast<uint8_t*>(c.pComponentData) + (index * c.metadata.sizeOfComponent),
 				1);
-			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent), 1);
+			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent), m_World, m_Entities[index]);
 		}
 
 		// Update Entity Registry
@@ -196,7 +231,8 @@ namespace Carnival::ECS {
 	}
 	std::pair<uint32_t, uint32_t> Archetype::removeLastEntity() {
 		for (auto& c : m_Components) {
-			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent), 1);
+			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent),
+				m_World, m_Entities[m_EntityCount - 1]);
 		}
 		Entity e = m_Entities[m_EntityCount - 1];
 		m_Entities.pop_back();
@@ -207,18 +243,21 @@ namespace Carnival::ECS {
 	Archetype::~Archetype() noexcept {
 		for (auto& cc : m_Components) {
 			if (cc.pComponentData != nullptr) {
-				cc.metadata.destructFn(static_cast<uint8_t*>(cc.pComponentData), m_EntityCount);
+				for (uint32_t i{}; i < m_EntityCount; i++)
+				cc.metadata.destructFn(cc.pComponentData, m_World, m_Entities[i]);
 				operator delete(cc.pComponentData, std::align_val_t(cc.metadata.alignOfComponent));
 			}
 		}
 	}
 	Archetype::Archetype(std::vector<ComponentColumn>&& components,
 		uint64_t pArchetype,
+		void*	 world,
 		uint32_t initialCapacity)
-		: m_Components{ std::move(components) }, m_ArchetypeID{ pArchetype }, m_Capacity{ initialCapacity }
+		: m_Components{ std::move(components) }, m_ArchetypeID{ pArchetype }, m_World{ world }, m_Capacity { initialCapacity }
 	{
 		for (auto& c : m_Components) {
-			c.pComponentData = operator new(static_cast<uint64_t>(c.metadata.sizeOfComponent) * m_Capacity, std::align_val_t(c.metadata.alignOfComponent));
+			c.pComponentData = operator new(static_cast<uint64_t>(c.metadata.sizeOfComponent) * m_Capacity,
+				std::align_val_t(c.metadata.alignOfComponent));
 		}
 	}
 
@@ -226,9 +265,15 @@ namespace Carnival::ECS {
 		if (newCapacity > m_Capacity) {
 			uint32_t updatedCapacity = static_cast<uint32_t>((m_Capacity + 1) * 1.5);
 			for (auto& c : m_Components) {
-				void* newMem = operator new(static_cast<uint64_t>(c.metadata.sizeOfComponent) * updatedCapacity, std::align_val_t(c.metadata.alignOfComponent));
+
+				void* newMem = operator new(static_cast<uint64_t>(c.metadata.sizeOfComponent) * updatedCapacity, 
+					std::align_val_t(c.metadata.alignOfComponent));
+
 				c.metadata.copyFn(c.pComponentData, newMem, m_EntityCount);
-				c.metadata.destructFn(c.pComponentData, m_EntityCount);
+
+				for (uint32_t i{}; i < m_EntityCount; i++) 
+					c.metadata.destructFn(c.pComponentData, m_World, m_Entities[i]);
+
 				operator delete(c.pComponentData, std::align_val_t(c.metadata.alignOfComponent));
 				c.pComponentData = newMem;
 			}

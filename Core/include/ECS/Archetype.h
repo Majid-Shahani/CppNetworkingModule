@@ -19,7 +19,7 @@ namespace Carnival::ECS {
 		static uint64_t hashArchetypeID(std::span<const uint64_t> sortedCompIDs);
 	public:
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg,
-			std::span<const uint64_t> sortedComponentIDs, uint64_t archetypeID, uint32_t initialCapacity = 5);
+			std::span<const uint64_t> sortedComponentIDs, uint64_t archetypeID, void* world, uint32_t initialCapacity = 5);
 
 		std::vector<uint64_t>			getComponentIDs() const;
 
@@ -56,6 +56,7 @@ namespace Carnival::ECS {
 		// TODO: Memory Allocator so operator new doesn't throw :)
 		Archetype(std::vector<ComponentColumn>&& components,
 			uint64_t archetypeID,
+			void*	 world,
 			uint32_t initialCapacity);
 
 		void ensureCapacity(uint32_t newCapacity);
@@ -63,6 +64,7 @@ namespace Carnival::ECS {
 		std::vector<ComponentColumn> m_Components{};
 		std::vector<Entity> m_Entities{};
 		const uint64_t m_ArchetypeID;
+		void* m_World;
 		uint32_t m_Capacity{};
 		uint32_t m_EntityCount{};
 	};
@@ -75,8 +77,12 @@ namespace Carnival::ECS {
 
 	struct ArchetypeRecord {
 		ArchetypeRecord(const ComponentRegistry& metadataReg,
-			std::span<const uint64_t> IDs, uint64_t ID, NetworkFlags flag, uint32_t initialCapacity = 5)
-			: arch{ Archetype::create(metadataReg, IDs, ID, initialCapacity) }, flags{ flag } {
+			std::span<const uint64_t> IDs, 
+			uint64_t archID,
+			void* pWorld,
+			NetworkFlags flag, 
+			uint32_t initialCapacity = 5)
+			: arch{ Archetype::create(metadataReg, IDs, archID, pWorld, initialCapacity) }, flags{ flag } {
 		}
 		//ArchetypeRecord() : arch{ nullptr }, flags{ NetworkFlags::LOCAL } {}
 		// MOVE CONSTRUCTOR NEEDED!

@@ -8,7 +8,7 @@ namespace Carnival::ECS {
 	{
 		uint64_t id{ Archetype::hashArchetypeID(components) };
 		
-		auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, flag, 5);
+		auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, static_cast<void*>(this), flag, 5);
 		if (!inserted) {
 			CL_CORE_ASSERT(it->second.flags == flag, "Mismatch Network flags on archetype");
 			CL_CORE_ASSERT(it->second.arch->getComponentIDs() == components, "Hash Collision");
