@@ -65,6 +65,21 @@ namespace Carnival::ECS {
 				++current;
 				return *this;
 			}
+			InnerLocalIter operator++(int) noexcept {
+				InnerLocalIter tmp = *this;
+				++(*this);
+				return tmp;
+			}
+
+			InnerLocalIter& operator--() noexcept {
+				--current;
+				return *this;
+			}
+			InnerLocalIter operator--(int) noexcept {
+				InnerLocalIter tmp = *this;
+				--(*this);
+				return tmp;
+			}
 
 			bool done() const noexcept { return current >= end; }
 
@@ -123,6 +138,23 @@ namespace Carnival::ECS {
 				++current;
 				++index;
 				return *this;
+			}
+			InnerNetworkedIter operator++(int) noexcept {
+				InnerNetworkedIter tmp = *this;
+				++(*this);
+				return tmp;
+			}
+
+			InnerNetworkedIter& operator--() noexcept {
+				CL_CORE_ASSERT(index != 0, "Decrementing Base pointer");
+				--current;
+				--index;
+				return *this;
+			}
+			InnerNetworkedIter operator--(int) noexcept {
+				auto tmp = *this;
+				--(*this);
+				return tmp;
 			}
 
 			bool done() const noexcept { return current >= end; }
@@ -272,7 +304,7 @@ namespace Carnival::ECS {
 
 			(IDs.push_back(Ts::ID), ...);
 			std::sort(IDs.begin(), IDs.end());
-			CL_CORE_ASSERT(std::ranges::adjacent_find(IDs) != IDs.end(), "Cannot Add duplicate components");
+			CL_CORE_ASSERT(std::ranges::adjacent_find(IDs) == IDs.end(), "Cannot Add duplicate components");
 
 			return createEntity(IDs, getNetFlag(IDs));
 		}
@@ -292,7 +324,7 @@ namespace Carnival::ECS {
 			components.reserve(components.size() + sizeof...(Ts));
 			(components.push_back(Ts::ID), ...);
 			std::sort(components.begin(), components.end());
-			CL_CORE_ASSERT(std::ranges::adjacent_find(components) != components.end(), "Cannot have duplicate components");
+			CL_CORE_ASSERT(std::ranges::adjacent_find(components) == components.end(), "Cannot have duplicate components");
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
@@ -320,7 +352,7 @@ namespace Carnival::ECS {
 
 			(components.erase(std::remove(components.begin(), components.end(), Ts::ID), components.end()), ...);
 			std::sort(components.begin(), components.end());
-			CL_CORE_ASSERT(std::ranges::adjacent_find(components) != components.end(), "Cannot have duplicate components");
+			CL_CORE_ASSERT(std::ranges::adjacent_find(components) == components.end(), "Cannot have duplicate components");
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
