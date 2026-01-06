@@ -55,11 +55,13 @@ int main() {
 
 	// =========================================== INIT ECS ========================================= //
 	World w{};
+	w.startUpdate();
 	w.registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
 	Entity onTickEntity = w.createEntity<Position, OnTickNetworkComponent>();
 	Entity onUpdateEntity = w.createEntity<Position, OnUpdateNetworkComponent>();
 	w.removeComponentsFromEntity<OnUpdateNetworkComponent>(onUpdateEntity);
 	w.addComponentsToEntity< OnUpdateNetworkComponent>(onUpdateEntity);
+	w.endUpdate();
 	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests
@@ -70,8 +72,9 @@ int main() {
 
 	// =========================================== Main Loop ========================================= //
 	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked 
+	w.startUpdate();
 	PositionMoverSystem(w, 1);
-
+	w.endUpdate();
 	// ============================================ CLEANUP =========================================== //
 	/*
 	* client code :

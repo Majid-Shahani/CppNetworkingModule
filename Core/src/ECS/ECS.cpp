@@ -2,7 +2,7 @@
 
 #include <ranges>
 
-#include <Stubs/ECS.h>
+#include <ECS/ECS.h>
 #include <CNM/utils.h>
 #include <CNM/macros.h>
 

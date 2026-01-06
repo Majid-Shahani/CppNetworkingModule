@@ -10,6 +10,24 @@ namespace Carnival::Network {
 		uint32_t entityID{};
 		uint32_t netID{};
 	};
+
+	/*
+	struct NetworkingSystem {
+		inline bool	testAndSetEntityDirty(uint32_t index) noexcept {
+			CL_CORE_ASSERT(index < m_EntityCount, "Index out of bounds");
+			auto comp = (static_cast<OnUpdateNetworkComponent*>(getComponentData(OnUpdateNetworkComponent::ID)) + index);
+			bool res = comp->dirty;
+			comp->dirty = true;
+			return res;
+		}
+		inline void	clearEntityDirty(uint32_t index) {
+			CL_CORE_ASSERT(index < m_EntityCount, "Index out of bounds");
+			auto comp = (static_cast<OnUpdateNetworkComponent*>(getComponentData(OnUpdateNetworkComponent::ID)) + index);
+			comp->dirty = false;
+		}
+	};
+	*/
+
 	namespace WireFormat {
 		// Alignment doesn't matter, padding is discarded, structs are unused.
 		// These are contracts, read field by field
@@ -22,7 +40,7 @@ namespace Carnival::Network {
 			SCHEMA,
 		};
 		enum class NetStatus : uint8_t {
-			DELETE = 0,
+			REMOVE = 0,
 			CREATE,
 			UPDATE,
 			MOVE,

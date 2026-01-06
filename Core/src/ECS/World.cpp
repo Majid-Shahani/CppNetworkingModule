@@ -1,5 +1,5 @@
 #include <src/CNMpch.hpp>
-#include <Stubs/World.h>
+#include <ECS/World.h>
 
 #include <ranges>
 
@@ -37,7 +37,9 @@ namespace Carnival::ECS {
 	}
 	void World::endUpdate()
 	{
-		// if any archetype has 0 entities, delete.
+		std::erase_if(m_Archetypes, [](const auto& pair) {
+			return pair.second.arch->getEntityCount() == 0;
+			});
 		// signal read only phase
 	}
 }

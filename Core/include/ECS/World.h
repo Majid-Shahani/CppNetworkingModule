@@ -6,8 +6,12 @@
 #include <span>
 #include <unordered_map>
 
-#include <Stubs/ECS.h>
+#include <ECS/ECS.h>
 #include <CNM/macros.h>
+
+#include <CNM/NetworkManager.h>
+#include <CNM/Buffer.h>
+#include <CNM/Replication.h>
 
 namespace Carnival::ECS {
 
@@ -103,14 +107,14 @@ namespace Carnival::ECS {
 			}
 			C& write() noexcept requires(writable) {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
-				if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))) std::print("Replication Record!\n"); // Submit Replication
+				std::print("Replication Record!\n"); // Submit Replication
 				return *current;
 			}
 
 			decltype(auto) operator*() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				if constexpr (writable) {
-					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))) std::print("Replication Record!\n"); // Submit Replication
+					std::print("Replication Record!\n"); // Submit Replication
 					return *current;
 				}
 				else
@@ -119,7 +123,7 @@ namespace Carnival::ECS {
 			decltype(auto) operator->() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				if constexpr (writable) {
-					if (!arch.testAndSetEntityDirty(static_cast<uint32_t>(index))) std::print("Replication Record!\n"); // Submit Replication
+					std::print("Replication Record!\n"); // Submit Replication
 					return current;
 				}
 				else
@@ -206,6 +210,7 @@ namespace Carnival::ECS {
 			}
 
 			OuterIter& operator++() noexcept {
+				// Bug : If first chunk of networkeds is empty, access occurs
 				CL_CORE_ASSERT(!isDone, "Incrementing End Iterator.");
 				if (onLocal) {
 					++localChunks[currentChunk];
@@ -290,7 +295,7 @@ namespace Carnival::ECS {
 				}
 				return Iterator{ locals, networkeds, chunk, onLocal, doneFlag };
 			}
-			Iterator end() { return Iterator{ locals, networkeds, 0, false, true }; }
+			Iterator end() { return Iterator{ locals, networkeds, networkeds.size(), false, true}; }
 		private:
 			std::vector<InnerLocalIter<P, C>> locals;
 			std::vector<InnerNetworkedIter<P, C>> networkeds;
@@ -401,7 +406,7 @@ namespace Carnival::ECS {
 			CL_CORE_ASSERT(!_debug_isDoubleNetworked(compIDs), "Cannot have both networking types");
 			for (const auto id : compIDs) {
 				if (id == OnTickNetworkComponent::ID) return NetworkFlags::ON_TICK;
-				else if (id == OnUpdateNetworkComponent::ID) return NetworkFlags::ON_UPDATE;
+				if (id == OnUpdateNetworkComponent::ID) return NetworkFlags::ON_UPDATE;
 			}
 			return NetworkFlags::LOCAL;
 		}
