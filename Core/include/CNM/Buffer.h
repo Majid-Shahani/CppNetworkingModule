@@ -3,6 +3,7 @@
 #include <new>
 #include <atomic>
 #include <cstdint>
+#include <span>
 
 namespace Carnival {
 	// Serialized ring buffer :
@@ -14,7 +15,99 @@ namespace Carnival {
 	// if write flag is false, and read index reaches write index, reset both to 0
 	// sound a lot like locks.
 
+	class IOBuffer {
+	public:
+		IOBuffer(uint64_t size)
+			: m_Data{nullptr}, m_Capacity{size}, m_Size{0} 
+		{
+			if (size) m_Data = new std::byte[size];
+		}
+		~IOBuffer() noexcept
+		{
+			if (m_Data) delete[] m_Data;
+		}
 
+		IOBuffer(const IOBuffer&) = delete;
+		IOBuffer& operator=(const IOBuffer&) = delete;
+
+		IOBuffer(IOBuffer&& other) noexcept
+			: m_Data{other.m_Data}, m_Capacity{other.m_Capacity}, m_Size{other.m_Size} {
+			other.m_Data = nullptr;
+			other.m_Capacity = 0;
+			other.m_Size = 0;
+		}
+		IOBuffer& operator=(IOBuffer&& other) noexcept {
+			if (this != &other) {
+				if (m_Data) delete[] m_Data;
+				m_Data = other.m_Data;
+				m_Capacity = other.m_Capacity;
+				m_Size = other.m_Size;
+				other.m_Data = nullptr;
+				other.m_Capacity = 0;
+				other.m_Size = 0;
+			}
+			return *this;
+		}
+
+		void write(std::span<const std::byte> data) {
+			ensureCapacity(m_Size + data.size());
+			std::memcpy(m_Data + m_Size, data.data(), data.size());
+			m_Size += data.size();
+		}
+		void write(const void* pData, uint64_t size) {
+			ensureCapacity(m_Size + size);
+			std::memcpy(m_Data + m_Size, pData, size);
+			m_Size += size;
+		}
+
+		std::span<const std::byte> read() const noexcept {
+			return { m_Data, m_Size };
+		}
+		std::span<const std::byte> readFromIndex(uint64_t index) const noexcept {
+			if (m_Data && index < m_Size) {
+				return { m_Data + index, m_Size - index };
+			}
+			return {};
+		}
+
+		std::byte* reserveWrite(uint64_t size) {
+			ensureCapacity(m_Size + size);
+			return m_Data + m_Size;
+		}
+		void commitWrite(uint64_t size) {
+			m_Size += size;
+		}
+
+		uint64_t getSize() const noexcept { return m_Size; }
+
+		void clear() noexcept {
+			m_Size = 0;
+		}
+		bool empty() const noexcept { return m_Size == 0; }
+	private:
+		void ensureCapacity(uint64_t newCap) {
+			if (newCap <= m_Capacity) return;
+			if (m_Capacity) {
+				if (newCap < 2 * m_Capacity) newCap = 2 * m_Capacity;
+			}
+			if (!m_Data) {
+				m_Data = new std::byte[newCap];
+				m_Capacity = newCap;
+			}
+			else {
+				auto tmp = new std::byte[newCap];
+				std::memcpy(tmp, m_Data, m_Size);
+				std::memset(tmp + m_Size, 0, newCap - m_Size);
+				delete[] m_Data;
+				m_Data = tmp;
+				m_Capacity = newCap;
+			}
+		}
+	private:
+		std::byte* m_Data;
+		uint64_t m_Capacity{};
+		uint64_t m_Size{};
+	};
 
 	// Replication Buffer :
 	// One big array, size = configNum(1024) * sizeof(ReplicationRecord)
@@ -40,6 +133,11 @@ namespace Carnival {
 		~ReplicationBuffer() {
 			delete[] data;
 		}
+
+		ReplicationBuffer(const ReplicationBuffer&) = delete;
+		ReplicationBuffer& operator=(const ReplicationBuffer&) = delete;
+		ReplicationBuffer(ReplicationBuffer&&) = delete;
+		ReplicationBuffer& operator=(ReplicationBuffer&&) = delete;
 
 		bool unqueue(uint32_t entityID) noexcept { return push(entityID); }
 		bool push(uint32_t eID) noexcept {

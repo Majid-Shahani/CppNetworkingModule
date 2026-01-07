@@ -50,7 +50,7 @@ void PositionMoverSystem(World& w, float delta) {
 
 void test() {
 	ReplicationBuffer<1024> buff;
-	for (int j{}; j < 10; j++) {
+	for (int j{}; j < 1024; j++) {
 		for (int i{}; i < 1024; i++) {
 			if (buff.push(i) == false) std::print("Push Error!\n");
 		}
