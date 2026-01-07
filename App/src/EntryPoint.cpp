@@ -50,10 +50,16 @@ void PositionMoverSystem(World& w, float delta) {
 
 void test() {
 	ReplicationBuffer<1024> buff;
-	buff.push(20);
-	uint32_t val{};
-	buff.pop(val);
-	std::print("Popped value: {}\n", val);
+	for (int j{}; j < 10; j++) {
+		for (int i{}; i < 1024; i++) {
+			if (buff.push(i) == false) std::print("Push Error!\n");
+		}
+		uint32_t val{};
+		for (int i{}; i < 1024; i++) {
+			if (buff.pop(val) != true) std::print("Pop Error!\n");
+			if (val != i) std::print("Pop Value Error!\n");
+		}
+	}
 }
 
 int main() {
