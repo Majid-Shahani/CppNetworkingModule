@@ -1,5 +1,15 @@
 #pragma once
 
+#ifdef CL_X64
+	#include <immintrin.h>
+	static inline void SpinPause() { _mm_pause(); }
+#elif defined(CL_ARM64)
+	#include <arm_acle.h>
+	static inline void SpinPause() { __yield(); }
+#else
+	static inline void SpinPause() {}
+#endif
+
 #include <new>
 #include <atomic>
 #include <cstdint>
@@ -14,6 +24,8 @@ namespace Carnival {
 	// packet send function cannot wrap, data must be contiguous. 
 	// if write flag is false, and read index reaches write index, reset both to 0
 	// sound a lot like locks.
+
+	// Simple Single threaded growing array
 
 	class IOBuffer {
 	public:
@@ -60,9 +72,7 @@ namespace Carnival {
 			m_Size += size;
 		}
 
-		std::span<const std::byte> read() const noexcept {
-			return { m_Data, m_Size };
-		}
+		std::span<const std::byte> read() const noexcept { return { m_Data, m_Size }; }
 		std::span<const std::byte> readFromIndex(uint64_t index) const noexcept {
 			if (m_Data && index < m_Size) {
 				return { m_Data + index, m_Size - index };
@@ -74,17 +84,12 @@ namespace Carnival {
 			ensureCapacity(m_Size + size);
 			return m_Data + m_Size;
 		}
-		void commitWrite(uint64_t size) {
-			m_Size += size;
-		}
+		void commitWrite(uint64_t size) { m_Size += size; }
 
-		uint64_t getSize() const noexcept { return m_Size; }
-
-		void clear() noexcept {
-			m_Size = 0;
-		}
+		uint64_t size() const noexcept { return m_Size; }
+		void clear() noexcept {	m_Size = 0;	}
 		bool empty() const noexcept { return m_Size == 0; }
-	private:
+		
 		void ensureCapacity(uint64_t newCap) {
 			if (newCap <= m_Capacity) return;
 			if (m_Capacity) {
@@ -124,7 +129,7 @@ namespace Carnival {
 	public:
 		ReplicationBuffer() {
 			static_assert(std::atomic<uint64_t>::is_always_lock_free, "64-bit uint is not lock free!");
-			static_assert( _size % 2 == 0, "Size must be a power of 2");
+			static_assert( _size & (_size - 1) == 0, "Size must be a power of 2");
 			data = new std::atomic<uint64_t>[_size]();
 			for (uint64_t i{}; i < _size; i++) {
 				data[i].store(getPack(static_cast<uint32_t>(i << 1), 0), std::memory_order_release);
@@ -142,8 +147,8 @@ namespace Carnival {
 		bool unqueue(uint32_t entityID) noexcept { return push(entityID); }
 		bool push(uint32_t eID) noexcept {
 			while (true) {
-				uint32_t idx = writeIndex.load(std::memory_order::relaxed);
-				uint64_t val = data[getIndex(idx)].load(std::memory_order::relaxed);
+				uint32_t idx = writeIndex.load(std::memory_order::acquire);
+				uint64_t val = data[getIndex(idx)].load(std::memory_order::acquire);
 				uint32_t seq = getSeq(val);
 
 				if (seq == static_cast<uint32_t>(idx << 1)) {
@@ -161,6 +166,7 @@ namespace Carnival {
 					== static_cast<uint32_t>((idx << 1) | 1u)) {
 					return false;
 				}
+				SpinPause();
 			}
 		}
 
@@ -186,6 +192,7 @@ namespace Carnival {
 				else if (getSeq(e) == static_cast<uint32_t>(idx << 1)) {
 					return false;
 				}
+				SpinPause();
 			}
 		}
 	private:
@@ -197,7 +204,7 @@ namespace Carnival {
 		}
 	private:
 		alignas(std::hardware_destructive_interference_size) std::atomic<uint32_t> writeIndex{};
+		alignas(std::hardware_destructive_interference_size) std::atomic<uint64_t>* data{ nullptr };
 		alignas(std::hardware_destructive_interference_size) std::atomic<uint32_t> readIndex{};
-		alignas(std::hardware_destructive_interference_size) std::atomic<uint64_t>* data;
 	};
 }
