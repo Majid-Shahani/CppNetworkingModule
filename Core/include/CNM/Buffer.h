@@ -31,7 +31,7 @@ namespace Carnival {
 	public:
 		ReplicationBuffer() {
 			static_assert(std::atomic<uint64_t>::is_always_lock_free, "64-bit uint is not lock free!");
-			static_assert((_size & (_size - 1)) == 0, "Size must be a power of 2");
+			static_assert( _size % 2 == 0, "Size must be a power of 2");
 			data = new std::atomic<uint64_t>[_size]();
 		}
 		~ReplicationBuffer() {
