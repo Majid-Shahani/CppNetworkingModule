@@ -2,5 +2,4 @@
 #include <CNM/Buffer.h>
 
 namespace Carnival {
-
 }

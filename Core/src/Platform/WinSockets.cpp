@@ -1,53 +1,24 @@
 #include <src/CNMpch.hpp>
 
-#ifdef CL_X64
-#include <immintrin.h>
-static inline void SpinPause() { _mm_pause(); }
-#elif defined(CL_ARM64)
-#include <arm_acle.h>
-static inline void SpinPause() { __yield(); }
-#else
-static inline void SpinPause() {}
-#endif
-
 #ifdef CL_Platform_Windows
 #include <include/CNM/macros.h>
 #include <include/CNM/Socket.h>
 namespace {
-	enum class WSAState : uint8_t {UNINITIALIZED, INITIALIZING, INITIALIZED};
-	std::atomic<WSAState> winsockState{WSAState::UNINITIALIZED};
-	std::atomic<uint16_t> socketRefCount{ 0 };
+	enum class WSAState : uint8_t {UNINITIALIZED, INITIALIZED};
+	WSAState winsockState{WSAState::UNINITIALIZED};
+	uint16_t socketRefCount{ 0 };
 
 	WORD winsockVersion = MAKEWORD(2, 2);
 	WSADATA wsaData{};
-
-	void initializeWSA() 
-	{
-		CL_CORE_ASSERT(socketRefCount.is_always_lock_free, "Atomic ref count is not lock-free.");
-		WSAState expected = WSAState::UNINITIALIZED;
-		if (winsockState.compare_exchange_strong(expected, WSAState::INITIALIZING, std::memory_order_acq_rel)) {
-			if (WSAStartup(winsockVersion, &wsaData) != 0) {
-				winsockState.store(WSAState::UNINITIALIZED, std::memory_order_release);
-			}
-			winsockState.store(WSAState::INITIALIZED, std::memory_order_release);
-		}
-		else {
-			while (winsockState.load(std::memory_order_acquire) != WSAState::INITIALIZED) {
-				SpinPause();
-				std::this_thread::yield();
-			}
-		}
-		// Possible issues : WSAStartup will fail and a thread will busy-wait until another thread attempt a WSAStartup
-	}
 }
 
 namespace Carnival::Network {
 	Socket::Socket(const SocketData& initData) noexcept
 	{
-		if (socketRefCount.fetch_add(1, std::memory_order_release) == 0) {
-			initializeWSA();
+		if (socketRefCount++ == 0) {
+			if(WSAStartup(winsockVersion, &wsaData) != 0) std::terminate();
+			winsockState = WSAState::INITIALIZED;
 		}
-		std::print("Ref count: {}\n", socketRefCount.load(std::memory_order::acquire));
 		// Set
 		m_Status = initData.status;
 		m_Status = static_cast<SocketStatus> (m_Status 
@@ -62,12 +33,11 @@ namespace Carnival::Network {
 	Socket::~Socket() noexcept 
 	{
 		if(isOpen() || isBound() || m_Handle != INVALID_SOCKET) closeSocket();
-		if (socketRefCount.fetch_sub(1, std::memory_order::acq_rel) == 1)
+		if (--socketRefCount == 0)
 		{
 			WSACleanup();
-			winsockState.store(WSAState::UNINITIALIZED, std::memory_order::release);
+			winsockState = WSAState::UNINITIALIZED;
 		}
-		std::print("Ref count: {}\n", socketRefCount.load(std::memory_order::acquire));
 	}
 	Socket::Socket(Socket&& other) noexcept
 		: m_Handle{ other.m_Handle },
@@ -79,7 +49,6 @@ namespace Carnival::Network {
 		other.m_InAddress.addr32 = 0;
 		other.m_Port = 0;
 		other.m_Status = SocketStatus::NONE;
-		std::print("Ref count: {}\n", socketRefCount.fetch_add(1, std::memory_order::release));
 
 	}
 	Socket& Socket::operator=(Socket&& other) noexcept
@@ -95,14 +64,13 @@ namespace Carnival::Network {
 			other.m_InAddress.addr32 = 0;
 			other.m_Port = 0;
 			other.m_Status = SocketStatus::NONE;
-			std::print("Ref count: {}\n", socketRefCount.fetch_add(1, std::memory_order::release)); 
 		}
 		return *this;
 	}
 
 	void Socket::openSocket()
 	{
-		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		if (m_Handle == INVALID_SOCKET) {
 			m_Handle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			if (m_Handle == INVALID_SOCKET)
@@ -131,7 +99,7 @@ namespace Carnival::Network {
 	}
 	bool Socket::closeSocket()
 	{
-		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isOpen(), "Socket must be open before closing.");
 		
 		if (!(m_Handle == INVALID_SOCKET) && closesocket(m_Handle) == SOCKET_ERROR) {
@@ -147,7 +115,7 @@ namespace Carnival::Network {
 
 	bool Socket::bindSocket()
 	{
-		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isOpen() && !isError(), "Socket Must be open before binding.");
 		if (m_Handle == INVALID_SOCKET) return false;
 
@@ -175,7 +143,7 @@ namespace Carnival::Network {
 	}
 	bool Socket::sendPackets(const char* packetData, const int packetSize, const ipv4_addr outAddr, uint16_t port) const
 	{
-		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Sending Packets.");
 		CL_CORE_ASSERT(packetSize != 0, "Packet Size is 0");
 		CL_CORE_ASSERT(packetData != nullptr, "Packet Data Poiner is null.");
@@ -194,7 +162,7 @@ namespace Carnival::Network {
 	}
 	bool Socket::receivePackets() const
 	{
-		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Receiving Packets.");
 
 		if (m_Handle == INVALID_SOCKET) return false;
@@ -215,9 +183,10 @@ namespace Carnival::Network {
 			}
 
 			// process
+			/*
 			uint32_t fromAddr = ntohl(from.sin_addr.s_addr);
 			uint16_t fromPort = ntohs(from.sin_port);
-
+			*/
 			packetData[(bytes >= (sizeof(packetData) - 1) ? sizeof(packetData) - 1 : bytes)] = '\0';
 			std::cout << packetData << '\n';
 		}
@@ -225,7 +194,7 @@ namespace Carnival::Network {
 
 	void Socket::setInAddress(ipv4_addr inAddr)
 	{
-		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		m_InAddress = inAddr;
 		// wait for transfers to complete maybe
 		// different queue for new packets or they are tagged
@@ -237,7 +206,7 @@ namespace Carnival::Network {
 	}
 	void Socket::setPort(uint16_t port)
 	{
-		CL_CORE_ASSERT(winsockState.load(std::memory_order_acquire) == WSAState::INITIALIZED, "WSA uninitialized");
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		m_Port = port;
 		if (isBound() && m_Handle != INVALID_SOCKET) {
 			closeSocket();

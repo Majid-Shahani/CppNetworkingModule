@@ -163,13 +163,6 @@ namespace Carnival::ECS {
 		return std::unique_ptr<Archetype>(new Archetype(std::move(columns), archID, pWorld, initialCapacity));
 	}
 
-	std::vector<uint64_t> Archetype::getComponentIDs() const {
-		std::vector<uint64_t> comps{};
-		comps.reserve(m_Components.size());
-		for (const auto& comp : m_Components) comps.emplace_back(comp.metadata.componentTypeID);
-		return comps;
-	}
-
 	uint32_t Archetype::addEntity(Entity id) {
 		ensureCapacity(m_EntityCount + 1);
 

@@ -478,8 +478,8 @@ namespace Carnival::ECS {
 		bool _debug_isDoubleNetworked(std::span<uint64_t> compIDs) {
 			for (const auto id : compIDs)
 				if (id == OnTickNetworkComponent::ID)
-					for (const auto id : compIDs)
-						if (id == OnUpdateNetworkComponent::ID) return true;
+					for (const auto id2 : compIDs)
+						if (id2 == OnUpdateNetworkComponent::ID) return true;
 			return false;
 		}
 	private:

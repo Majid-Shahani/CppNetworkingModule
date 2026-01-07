@@ -43,7 +43,7 @@ namespace Carnival::Network {
 		}
 	private:
 		// Host Byte Order for Address and Port
-		uint64_t		m_Handle = ~0;
+		uint64_t		m_Handle = UINT64_MAX;
 		ipv4_addr		m_InAddress{};
 		uint16_t		m_Port = 0;
 		SocketStatus	m_Status = SocketStatus::NONE;

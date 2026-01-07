@@ -21,7 +21,12 @@ namespace Carnival::ECS {
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg,
 			std::span<const uint64_t> sortedComponentIDs, uint64_t archetypeID, void* world, uint32_t initialCapacity = 5);
 
-		std::vector<uint64_t>			getComponentIDs() const;
+		std::vector<uint64_t>			getComponentIDs() const {
+			std::vector<uint64_t> comps{};
+			comps.reserve(m_Components.size());
+			for (const auto& comp : m_Components) comps.emplace_back(comp.metadata.componentTypeID);
+			return comps;
+		}
 
 		uint32_t						addEntity(Entity id);
 		uint32_t						addEntity(Entity id, const Archetype& src, uint32_t srcIndex);

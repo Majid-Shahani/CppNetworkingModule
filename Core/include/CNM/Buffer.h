@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <atomic>
 #include <cstdint>
 
@@ -21,19 +22,4 @@ namespace Carnival {
 	// Writer Reserves a spot, by moving index forward. if tmp index > capacity, return false 
 	// or throw error. once write phase ends, read phase begins from first index. serialization is done
 	// once read phase ends, both indices are set to 0. buffer is reset.
-	
-	class ReplicationBuffer {
-	public:
-		ReplicationBuffer(uint64_t capacity = 1024)
-			: CAPACITY{ capacity } {
-
-		}
-	private:
-		alignas(64) std::atomic<uint64_t> writeIndex{};
-		
-		alignas(64)
-			void* buffer{};
-		const uint64_t CAPACITY;
-		uint64_t readIndex{};
-	};
 }
