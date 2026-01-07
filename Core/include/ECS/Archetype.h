@@ -89,8 +89,19 @@ namespace Carnival::ECS {
 			uint32_t initialCapacity = 5)
 			: arch{ Archetype::create(metadataReg, IDs, archID, pWorld, initialCapacity) }, flags{ flag } {
 		}
-		//ArchetypeRecord() : arch{ nullptr }, flags{ NetworkFlags::LOCAL } {}
-		// MOVE CONSTRUCTOR NEEDED!
+		
+		ArchetypeRecord(ArchetypeRecord&& other) noexcept 
+			: arch{ other.arch.release() }, flags{other.flags} {}
+		ArchetypeRecord& operator=(ArchetypeRecord&& other) noexcept
+		{
+			arch.reset(other.arch.release());
+			flags = other.flags;
+		}
+
+		ArchetypeRecord(const ArchetypeRecord&) = delete;
+		ArchetypeRecord& operator=(const ArchetypeRecord&) = delete;
+
+		~ArchetypeRecord() = default;
 
 		std::unique_ptr<Archetype> arch;
 		NetworkFlags flags;
