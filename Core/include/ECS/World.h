@@ -330,10 +330,10 @@ namespace Carnival::ECS {
 			static void copy(const void* src, void* dest, uint32_t count) {
 				memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
 			}
-			static void serialize(const void* src, void* out, uint32_t count) {
+			static void serialize(const void* src, IOBuffer& outbuffer, uint32_t count) {
 				// static_cast<buffer*>(out)->put_uint32(static_cast<const OnUpdateNetworkComponent*>(src)->networkID);
 			}
-			static void deserialize(void* dest, const void* in, uint32_t count) {
+			static void deserialize(void* dest, const IOBuffer& inBuffer, uint32_t count) {
 				// static_cast<OnUpdateNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
 			}
 		};
@@ -355,10 +355,10 @@ namespace Carnival::ECS {
 			static void copy(const void* src, void* dest, uint32_t count) {
 				memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
 			}
-			static void serialize(const void* src, void* out, uint32_t count) {
+			static void serialize(const void* src, IOBuffer& outbuffer, uint32_t count) {
 				// static_cast<buffer*>(out)->put_uint32(static_cast<const OnTickNetworkComponent*>(src)->networkID);
 			}
-			static void deserialize(void* dest, const void* in, uint32_t count) {
+			static void deserialize(void* dest, const IOBuffer& inBuffer, uint32_t count) {
 				// static_cast<OnTickNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
 			}
 		};
