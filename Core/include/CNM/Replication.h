@@ -4,15 +4,6 @@
 #include <ECS/Archetype.h>
 
 namespace Carnival::Network {
-	struct ComponentRecord {
-		uint64_t archetypeID{};
-		uint64_t componentID{};
-	};
-	struct EntityRecord {
-		uint32_t entityID{};
-		uint32_t netID{};
-	};
-
 	/*
 	struct NetworkingSystem {
 		inline bool	testAndSetEntityDirty(uint32_t index) noexcept {

@@ -1,4 +1,5 @@
 #include <CNM.h>
+#include <CNM/Buffer.h>
 
 #include <print>
 #include <thread>
@@ -47,8 +48,18 @@ void PositionMoverSystem(World& w, float delta) {
 	}
 }
 
+void test() {
+	ReplicationBuffer<1024> buff;
+	buff.push(20);
+	uint32_t val{};
+	buff.pop(val);
+	std::print("Popped value: {}\n", val);
+}
+
 int main() {
 	// ========================================= INIT NETWORK ======================================= //
+	
+	test();
 	// =========================================== INIT ECS ========================================= //
 	World w{};
 	w.startUpdate();
