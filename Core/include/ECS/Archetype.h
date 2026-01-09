@@ -16,7 +16,7 @@ namespace Carnival::ECS {
 	class Archetype {
 	public:
 		// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
-		static uint64_t hashArchetypeID(std::span<const uint64_t> sortedCompIDs);
+		static uint64_t hashArchetypeID(std::span<const uint64_t> sortedCompIDs) noexcept;
 	public:
 		static std::unique_ptr<Archetype> create(const ComponentRegistry& metadataReg,
 			std::span<const uint64_t> sortedComponentIDs, uint64_t archetypeID, void* world, uint32_t initialCapacity = 5);
@@ -31,30 +31,24 @@ namespace Carnival::ECS {
 		uint32_t						addEntity(Entity id);
 		uint32_t						addEntity(Entity id, const Archetype& src, uint32_t srcIndex);
 
-		std::pair<uint32_t, uint32_t>	removeEntity(Entity entity);
-		std::pair<uint32_t, uint32_t>	removeEntityAt(uint32_t index);
-		std::pair<uint32_t, uint32_t>	removeLastEntity();
+		std::pair<uint32_t, uint32_t>	removeEntity(Entity entity) noexcept;
+		std::pair<uint32_t, uint32_t>	removeEntityAt(uint32_t index) noexcept;
+		std::pair<uint32_t, uint32_t>	removeLastEntity() noexcept;
 
-		inline uint32_t					getEntityCount() const { return m_EntityCount; }
-		inline Entity					getEntity(uint32_t index) const { return m_Entities[index]; }
+		inline uint32_t					getEntityCount() const noexcept { return m_EntityCount; }
+		inline Entity					getEntity(uint32_t index) const noexcept { return m_Entities[index]; }
+		inline Entity*					getEntities() noexcept { return m_Entities.data(); }
 
-		inline uint32_t					getComponentIndex(uint64_t cID) const {
+		inline uint32_t					getComponentIndex(uint64_t cID) const noexcept {
 			for (int i{}; i < m_Components.size(); i++) if (m_Components[i].metadata.componentTypeID == cID) return i;
 			return UINT32_MAX;
 		}
-		inline void* getComponentData(uint64_t cID) {
+		inline void*					getComponentData(uint64_t cID) noexcept {
 			for (const auto& c : m_Components) if (c.metadata.componentTypeID == cID) return c.pComponentData;
 			return nullptr;
 		}
-		inline void const* readComponentData(uint32_t index) const {
-			if (index >= m_Components.size()) return nullptr;
-			return m_Components[index].pComponentData;
-		}
-		inline void* writeComponentData(uint32_t index) {
-			if (index >= m_Components.size()) return nullptr;
-			return m_Components[index].pComponentData;
-		}
-		inline uint64_t					getID() const { return m_ArchetypeID; }
+		
+		inline uint64_t					getID() const noexcept { return m_ArchetypeID; }
 
 		~Archetype() noexcept;
 	private:

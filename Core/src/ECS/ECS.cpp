@@ -195,7 +195,7 @@ namespace Carnival::ECS {
 		return m_EntityCount++;
 	}
 
-	std::pair<uint32_t, uint32_t> Archetype::removeEntity(Entity entity) {
+	std::pair<uint32_t, uint32_t> Archetype::removeEntity(Entity entity) noexcept {
 		for (uint32_t i{}; i < m_EntityCount; i++) {
 			if (m_Entities[i] == entity) return removeEntityAt(i);
 		}
@@ -203,7 +203,7 @@ namespace Carnival::ECS {
 	}
 	// Possibly Destructors should not be called, if moved / copied entity will be come invalid after destruction.
 	// RETURNS INDEX OF entity to be updated in entity manager to the index passed in
-	std::pair<uint32_t, uint32_t> Archetype::removeEntityAt(uint32_t index) {
+	std::pair<uint32_t, uint32_t> Archetype::removeEntityAt(uint32_t index) noexcept {
 		CL_CORE_ASSERT(index < m_EntityCount, "remove called on out of bounds index");
 		// Swap and Destruct Components
 		if (index == m_EntityCount - 1) return removeLastEntity();
@@ -222,7 +222,7 @@ namespace Carnival::ECS {
 		--m_EntityCount;
 		return { m_Entities[index], index };
 	}
-	std::pair<uint32_t, uint32_t> Archetype::removeLastEntity() {
+	std::pair<uint32_t, uint32_t> Archetype::removeLastEntity() noexcept {
 		for (auto& c : m_Components) {
 			c.metadata.destructFn(static_cast<uint8_t*>(c.pComponentData) + ((m_EntityCount - 1) * c.metadata.sizeOfComponent),
 				m_World, m_Entities[m_EntityCount - 1]);
@@ -275,7 +275,7 @@ namespace Carnival::ECS {
 	}
 
 	// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
-	uint64_t Archetype::hashArchetypeID(std::span<const uint64_t> compIDs) {
+	uint64_t Archetype::hashArchetypeID(std::span<const uint64_t> compIDs) noexcept {
 		CL_CORE_ASSERT(std::ranges::is_sorted(compIDs), "IDs must be sorted");
 		uint64_t hash = utils::FNV64_OFFSET_BASIS;
 		for (auto id : compIDs) {

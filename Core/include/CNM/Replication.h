@@ -1,25 +1,14 @@
 #pragma once
 #include <cstdint>
 
-#include <ECS/Archetype.h>
+#include <CNM/Buffer.h>
 
 namespace Carnival::Network {
-	/*
-	struct NetworkingSystem {
-		inline bool	testAndSetEntityDirty(uint32_t index) noexcept {
-			CL_CORE_ASSERT(index < m_EntityCount, "Index out of bounds");
-			auto comp = (static_cast<OnUpdateNetworkComponent*>(getComponentData(OnUpdateNetworkComponent::ID)) + index);
-			bool res = comp->dirty;
-			comp->dirty = true;
-			return res;
-		}
-		inline void	clearEntityDirty(uint32_t index) {
-			CL_CORE_ASSERT(index < m_EntityCount, "Index out of bounds");
-			auto comp = (static_cast<OnUpdateNetworkComponent*>(getComponentData(OnUpdateNetworkComponent::ID)) + index);
-			comp->dirty = false;
-		}
+	class Replicator {
+	public:
+		using serializationCallback = void (*) (void*, uint32_t, MessageBuffer&);
+	private:
 	};
-	*/
 
 	namespace WireFormat {
 		// Alignment doesn't matter, padding is discarded, structs are unused.

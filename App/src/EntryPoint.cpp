@@ -25,32 +25,27 @@ struct Position {
 	static void copy(const void* src, void* dest, uint32_t count = 1) {
 		memcpy(dest, src, sizeof(Position) * count);
 	}
-	static void serialize(const void* src, IOBuffer& outbuffer, uint32_t count = 1) {
+	static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count = 1) {
 		
 	}
-	static void deserialize(void* dest, const IOBuffer& inBuffer, uint32_t count = 1) {
+	static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count = 1) {
 		
 	}
 };
 
 void PositionMoverSystem(World& w, float delta) {
 	auto query = w.query<QueryPolicy::RW, Position>();
-	/*
+	
 	for (auto it = query.begin(); it != query.end(); ++it) {
 		it.write().x = it.read().x + delta;
 
-		std::print("Marked Dirty. Value: {}\n", it.read().x);
-	}
-	*/
-	int i{};
-	for (const auto& c : query) {
-		c.x;
+		std::print("Value: {}\n", it.read().x);
 	}
 }
 
 int main() {
 	// ========================================= INIT NETWORK ======================================= //
-	
+	Replicator rep{};
 	// =========================================== INIT ECS ========================================= //
 	World w{};
 	w.startUpdate();

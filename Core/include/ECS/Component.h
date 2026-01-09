@@ -13,8 +13,8 @@ namespace Carnival::ECS {
 		using ConstructFn = void (*)(void* dest, void* world, Entity e) noexcept;
 		using DestructFn = void (*)(void* dest, void* world, Entity e) noexcept;
 		using CopyFn = void (*)(const void* src, void* dest, uint32_t count);
-		using SerializeFn = void (*)(const void* src, IOBuffer& outbuffer, uint32_t count);
-		using DeserializeFn = void (*)(void* dest, const IOBuffer& inBuffer, uint32_t count);
+		using SerializeFn = void (*)(const void* src, MessageBuffer& outbuffer, uint32_t count);
+		using DeserializeFn = void (*)(void* dest, const MessageBuffer& inBuffer, uint32_t count);
 
 		ConstructFn		constructFn = nullptr; // placement-new elements
 		DestructFn		destructFn = nullptr; // destruct elements

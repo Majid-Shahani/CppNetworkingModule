@@ -1,56 +1,52 @@
 #pragma once
 
 #ifdef CL_X64
-	#include <immintrin.h>
-	static inline void SpinPause() { _mm_pause(); }
+#include <immintrin.h>
+static inline void SpinPause() { _mm_pause(); }
 #elif defined(CL_ARM64)
-	#include <arm_acle.h>
-	static inline void SpinPause() { __yield(); }
+#include <arm_acle.h>
+static inline void SpinPause() { __yield(); }
 #else
-	static inline void SpinPause() {}
+static inline void SpinPause() {}
 #endif
+
+#include <CNM/macros.h>
 
 #include <new>
 #include <atomic>
 #include <cstdint>
+#include <vector>
 #include <span>
 
 namespace Carnival {
-	// Serialized ring buffer :
-	// Drop is fine, write index is auth, if read > write, that's capacity, return false if cant write
-	// if write > read, capacity = size - write.
-	// packet boundaries, recrod say size and type, it should be complete,
-	// write flag will be checked, if true, read will add all to the packet.
-	// packet send function cannot wrap, data must be contiguous. 
-	// if write flag is false, and read index reaches write index, reset both to 0
-	// sound a lot like locks.
-
-	// Simple Single threaded growing array
-
-	class IOBuffer {
+	/*
+	*  Serialized ring buffer :
+	*  split into messages, account of messages taken, writer reserves size,
+	*  once write is complete that message is marked complete.
+	*  double buffered across network ticks, used for unreliable messages
+	*/
+	
+	class MessageBuffer {
 	public:
-		IOBuffer(uint64_t size)
-			: m_Data{nullptr}, m_Capacity{size}, m_Size{0} 
-		{
-			if (size) m_Data = new std::byte[size];
+		MessageBuffer(uint32_t bufferSize)
+			: m_Data{ nullptr }, m_Capacity{ bufferSize } {
+			CL_CORE_ASSERT(m_Capacity != 0, "buffer must have starting size");
+			m_Data = new std::byte[m_Capacity];
 		}
-		~IOBuffer() noexcept
-		{
-			if (m_Data) delete[] m_Data;
-		}
+		~MessageBuffer() noexcept {	delete[] m_Data; }
 
-		IOBuffer(const IOBuffer&) = delete;
-		IOBuffer& operator=(const IOBuffer&) = delete;
-
-		IOBuffer(IOBuffer&& other) noexcept
-			: m_Data{other.m_Data}, m_Capacity{other.m_Capacity}, m_Size{other.m_Size} {
+		MessageBuffer(const MessageBuffer&) = delete;
+		MessageBuffer& operator=(const MessageBuffer&) = delete;
+		
+		MessageBuffer(MessageBuffer&& other) noexcept
+			: m_Data{ other.m_Data }, m_Capacity{ other.m_Capacity }, m_Size{ other.m_Size } {
 			other.m_Data = nullptr;
 			other.m_Capacity = 0;
 			other.m_Size = 0;
 		}
-		IOBuffer& operator=(IOBuffer&& other) noexcept {
+		MessageBuffer& operator=(MessageBuffer&& other) noexcept {
 			if (this != &other) {
-				if (m_Data) delete[] m_Data;
+				delete[] m_Data;
 				m_Data = other.m_Data;
 				m_Capacity = other.m_Capacity;
 				m_Size = other.m_Size;
@@ -61,61 +57,63 @@ namespace Carnival {
 			return *this;
 		}
 
-		void write(std::span<const std::byte> data) {
-			ensureCapacity(m_Size + data.size());
-			std::memcpy(m_Data + m_Size, data.data(), data.size());
-			m_Size += data.size();
-		}
-		void write(const void* pData, uint64_t size) {
-			ensureCapacity(m_Size + size);
-			std::memcpy(m_Data + m_Size, pData, size);
-			m_Size += size;
-		}
-
-		std::span<const std::byte> read() const noexcept { return { m_Data, m_Size }; }
-		std::span<const std::byte> readFromIndex(uint64_t index) const noexcept {
-			if (m_Data && index < m_Size) {
-				return { m_Data + index, m_Size - index };
-			}
-			return {};
-		}
-
-		std::byte* reserveWrite(uint64_t size) {
-			ensureCapacity(m_Size + size);
-			return m_Data + m_Size;
-		}
-		void commitWrite(uint64_t size) { m_Size += size; }
-
-		uint64_t size() const noexcept { return m_Size; }
-		void clear() noexcept {	m_Size = 0;	}
-		bool empty() const noexcept { return m_Size == 0; }
+		// for correct behavior, must call startUse and check results
+		// if returned true, you can use
+		bool startUse() { return !m_InUse.test_and_set(std::memory_order_acq_rel); }
+		void stopUse() { m_InUse.clear(std::memory_order_release); }
+		// ========================================== MESSAGE WRITE ======================================= //
 		
-		void ensureCapacity(uint64_t newCap) {
-			if (newCap <= m_Capacity) return;
-			if (m_Capacity) {
-				if (newCap < 2 * m_Capacity) newCap = 2 * m_Capacity;
-			}
-			if (!m_Data) {
-				m_Data = new std::byte[newCap];
-				m_Capacity = newCap;
-			}
-			else {
-				auto tmp = new std::byte[newCap];
-				std::memcpy(tmp, m_Data, m_Size);
-				std::memset(tmp + m_Size, 0, newCap - m_Size);
-				delete[] m_Data;
-				m_Data = tmp;
-				m_Capacity = newCap;
-			}
+		// Returns Address, call markReady once message has been written
+		std::byte* startMessage(uint32_t size) {
+			if (m_MessageInFlight)	return nullptr;
+			m_MessageInFlight = true;
+
+			ensureCapacity(size + m_Size);
+
+			auto addr = m_Data + m_Size;
+			m_Size += size;
+			return addr;
+		}
+		void markReady() noexcept { m_MessageInFlight = false; }
+		
+		// ========================================== MESSAGE READ ======================================= //
+		std::span<const std::byte> getReadyMessages() { return { m_Data, m_Data + m_Size }; }
+
+		// =============================================================================================== //
+		void reset() noexcept { m_Size = 0; }
+		void shrinkToFitOrSize(uint32_t newCap = 1) {
+			if (newCap < m_Size) newCap = m_Size;
+
+			auto tmp = new std::byte[newCap];
+			std::memcpy(tmp, m_Data, m_Size);
+			delete[] m_Data;
+
+			m_Data = tmp;
+			m_Capacity = newCap;
 		}
 	private:
+		void ensureCapacity(uint32_t newCap) {
+			if (newCap < m_Capacity) return;
+			if (newCap < m_Capacity * 2) newCap = m_Capacity * 2;
+
+			auto tmp = new std::byte[newCap];
+			std::memcpy(tmp, m_Data, m_Size);
+			delete[] m_Data;
+
+			m_Data = tmp;
+			m_Capacity = newCap;
+		}
+
+	private:
 		std::byte* m_Data;
-		uint64_t m_Capacity{};
-		uint64_t m_Size{};
+		uint32_t m_Capacity;
+		uint32_t m_Size{};
+		bool m_MessageInFlight = false;
+		std::atomic_flag m_InUse{};
 	};
 
 	// Replication Buffer :
-	// One big array, size = configNum(1024) * sizeof(ReplicationRecord)
+	// One big array, size = configNum(1024) * 4
 	// MPSC, Atomic Write Index. Non-Atomic read index. writes and reads will be done in phases.
 	// Writer Reserves a spot, by moving index forward. if tmp index > capacity, return false 
 	// or throw error. once write phase ends, read phase begins from first index. serialization is done
@@ -129,10 +127,10 @@ namespace Carnival {
 	public:
 		ReplicationBuffer() {
 			static_assert(std::atomic<uint64_t>::is_always_lock_free, "64-bit uint is not lock free!");
-			static_assert( _size & (_size - 1) == 0, "Size must be a power of 2");
+			static_assert( (_size & (_size - 1)) == 0, "Size must be a power of 2");
 			data = new std::atomic<uint64_t>[_size]();
 			for (uint64_t i{}; i < _size; i++) {
-				data[i].store(getPack(static_cast<uint32_t>(i << 1), 0), std::memory_order_release);
+				data[i].store(getPack(0, static_cast<uint32_t>(i << 1)), std::memory_order_release);
 			}
 		}
 		~ReplicationBuffer() {
@@ -144,7 +142,7 @@ namespace Carnival {
 		ReplicationBuffer(ReplicationBuffer&&) = delete;
 		ReplicationBuffer& operator=(ReplicationBuffer&&) = delete;
 
-		bool unqueue(uint32_t entityID) noexcept { return push(entityID); }
+		bool enqueue(uint32_t entityID) noexcept { return push(entityID); }
 		bool push(uint32_t eID) noexcept {
 			while (true) {
 				uint32_t idx = writeIndex.load(std::memory_order::acquire);
@@ -152,7 +150,7 @@ namespace Carnival {
 				uint32_t seq = getSeq(val);
 
 				if (seq == static_cast<uint32_t>(idx << 1)) {
-					uint64_t entryData{ getPack(seq | 1u, eID) };
+					uint64_t entryData{ getPack(eID, seq | 1u) };
 					if (data[getIndex(idx)].compare_exchange_strong(val, entryData,
 						std::memory_order::release, std::memory_order::relaxed)) {
 						writeIndex.compare_exchange_strong(idx, idx + 1, std::memory_order::release, std::memory_order::relaxed);
@@ -177,7 +175,7 @@ namespace Carnival {
 				uint64_t e = data[getIndex(idx)].load(std::memory_order_acquire);
 
 				if (getSeq(e) == static_cast<uint32_t>((idx << 1) | 1u)) {
-					uint64_t empty{ getPack(static_cast<uint32_t>((idx + _size) << 1u), 0) };
+					uint64_t empty{ getPack(0, static_cast<uint32_t>((idx + _size) << 1u)) };
 
 					if (data[getIndex(idx)].compare_exchange_strong(e, empty,
 						std::memory_order::release, std::memory_order::relaxed)) {
@@ -196,12 +194,10 @@ namespace Carnival {
 			}
 		}
 	private:
-		static constexpr uint64_t getPack(uint32_t seq, uint32_t eID) { return (static_cast<uint64_t>(seq) << 32) | eID; }
-		static constexpr uint32_t getSeq(uint64_t value) { return static_cast<uint32_t>(value >> 32); }
-		static constexpr uint32_t getEntityID(uint64_t value) { return static_cast<uint32_t>(value); }
-		static constexpr uint32_t getIndex(uint32_t idx) {
-			return idx & (_size - 1);
-		}
+		static constexpr uint64_t getPack(uint32_t eID, uint32_t seq) { return (static_cast<uint64_t>(eID) << 32) | seq; }
+		static constexpr uint32_t getEntityID(uint64_t value) { return static_cast<uint32_t>(value >> 32); }
+		static constexpr uint32_t getSeq(uint64_t value) { return static_cast<uint32_t>(value); }
+		static constexpr uint32_t getIndex(uint32_t idx) { return idx & (_size - 1); }
 	private:
 		alignas(std::hardware_destructive_interference_size) std::atomic<uint32_t> writeIndex{};
 		alignas(std::hardware_destructive_interference_size) std::atomic<uint64_t>* data{ nullptr };

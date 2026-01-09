@@ -52,17 +52,11 @@ namespace Carnival::ECS {
 
 			decltype(auto) operator*() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
-				if constexpr (writable)
-					return *current;
-				else
-					return static_cast<const C&>(*current);
+				return static_cast<const C&>(*current);
 			}
 			decltype(auto) operator->() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
-				if constexpr (writable)
-					return current;
-				else
-					return static_cast<const C*>(current);
+				return static_cast<const C*>(current);
 			}
 
 			bool operator!=(const InnerLocalIter& other) const noexcept {
@@ -102,40 +96,28 @@ namespace Carnival::ECS {
 
 		template<QueryPolicy P, ECSComponent C>
 		struct InnerNetworkedIter {
-			InnerNetworkedIter(C* base, C* end, Archetype& archetype)
-				: current{ base }, end{ end }, arch{ archetype }, index{ arch.getEntityCount() - static_cast<uint64_t>(end - current) } {
+			InnerNetworkedIter(C* base, C* end, Entity* entity, World& refWorld)
+				: current{ base }, end{ end }, pEntity{ entity }, world{ refWorld} {
 				CL_CORE_ASSERT(base <= end, "base pointer has to be before end pointer");
 			}
-
-			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
 
 			const C& read() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				return *current;
 			}
-			C& write() noexcept requires(writable) {
+			C& write() noexcept requires(P == QueryPolicy::ReadWrite) {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
-				std::print("Replication Record!\n"); // Submit Replication
+				world.markDirty(*pEntity);
 				return *current;
 			}
 
 			decltype(auto) operator*() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
-				if constexpr (writable) {
-					std::print("Replication Record!\n"); // Submit Replication
-					return *current;
-				}
-				else
-					return static_cast<const C&>(*current);
+				return static_cast<const C&>(*current);
 			}
 			decltype(auto) operator->() const noexcept {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
-				if constexpr (writable) {
-					std::print("Replication Record!\n"); // Submit Replication
-					return current;
-				}
-				else
-					return static_cast<const C*>(current);
+				return static_cast<const C*>(current);
 			}
 
 			bool operator!=(const InnerNetworkedIter& other) const noexcept {
@@ -148,7 +130,7 @@ namespace Carnival::ECS {
 			InnerNetworkedIter& operator++() noexcept {
 				CL_CORE_ASSERT(current < end, "Incrementing End Iterator");
 				++current;
-				++index;
+				++pEntity;
 				return *this;
 			}
 			InnerNetworkedIter operator++(int) noexcept {
@@ -156,11 +138,10 @@ namespace Carnival::ECS {
 				++(*this);
 				return tmp;
 			}
-
+			// no bounds check
 			InnerNetworkedIter& operator--() noexcept {
-				CL_CORE_ASSERT(index != 0, "Decrementing Base pointer");
 				--current;
-				--index;
+				--pEntity;
 				return *this;
 			}
 			InnerNetworkedIter operator--(int) noexcept {
@@ -174,8 +155,8 @@ namespace Carnival::ECS {
 		private:
 			C* current;
 			C* end;
-			Archetype& arch;
-			uint64_t index{};
+			World& world;
+			Entity* pEntity;
 		};
 
 	public:
@@ -330,11 +311,11 @@ namespace Carnival::ECS {
 			static void copy(const void* src, void* dest, uint32_t count) {
 				memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
 			}
-			static void serialize(const void* src, IOBuffer& outbuffer, uint32_t count) {
-				// static_cast<buffer*>(out)->put_uint32(static_cast<const OnUpdateNetworkComponent*>(src)->networkID);
+			static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count) {
+
 			}
-			static void deserialize(void* dest, const IOBuffer& inBuffer, uint32_t count) {
-				// static_cast<OnUpdateNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
+			static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count) {
+				// need index or handled internally
 			}
 		};
 		struct OnTickNetworkComponent {
@@ -355,10 +336,10 @@ namespace Carnival::ECS {
 			static void copy(const void* src, void* dest, uint32_t count) {
 				memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
 			}
-			static void serialize(const void* src, IOBuffer& outbuffer, uint32_t count) {
+			static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count) {
 				// static_cast<buffer*>(out)->put_uint32(static_cast<const OnTickNetworkComponent*>(src)->networkID);
 			}
-			static void deserialize(void* dest, const IOBuffer& inBuffer, uint32_t count) {
+			static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count) {
 				// static_cast<OnTickNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
 			}
 		};
@@ -450,7 +431,7 @@ namespace Carnival::ECS {
 
 				auto cData = static_cast<T*>(pData);
 				if (rec.flags == NetworkFlags::ON_UPDATE) {
-					nets.emplace_back(cData, cData + arch.getEntityCount(), arch);
+					nets.emplace_back(cData, cData + arch.getEntityCount(), arch.getEntities(), *this);
 				}
 				else {
 					locals.emplace_back(cData, cData + arch.getEntityCount());
@@ -466,6 +447,16 @@ namespace Carnival::ECS {
 
 		uint32_t getNetID(Entity eID) { return m_IDGen.createID(eID); }
 		void freeNetID(uint32_t netID) { m_IDGen.destroyID(netID); }
+
+		void markDirty(Entity e) {
+			std::print("Mark dirty called for Entity: {}\n", e);
+			auto entry{ m_EntityManager.get(e) };
+			auto arr{ static_cast<OnUpdateNetworkComponent*>(entry.pArchetype->getComponentData(OnUpdateNetworkComponent::ID)) };
+			if (arr[entry.index].dirty == true) return;
+			arr[entry.index].dirty = true;
+			std::print("Entity {} marked dirty!\n", e);
+			// submit replication record.
+		}
 
 		NetworkFlags getNetFlag(std::span<uint64_t> compIDs) {
 			CL_CORE_ASSERT(!_debug_isDoubleNetworked(compIDs), "Cannot have both networking types");
@@ -484,9 +475,10 @@ namespace Carnival::ECS {
 		}
 	private:
 		EntityManager m_EntityManager;
+		ComponentRegistry m_Registry;
 		NetIDGenerator m_IDGen;
 		std::unordered_map<uint64_t, ArchetypeRecord> m_Archetypes;
-		ComponentRegistry m_Registry;
+		Network::Replicator m_Replicator;
 	};
 
 }
