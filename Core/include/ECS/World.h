@@ -25,16 +25,7 @@ namespace Carnival::ECS {
 
 	struct ReplicationContext {
 		ReplicationContext() = default;
-		// Must Guarantee No concurrent access during move, otherwise UB
-		ReplicationContext(ReplicationContext&& other) noexcept
-		{
-			entityTable = std::move(other.entityTable);
-			reliableStagingBuffer = std::move(other.reliableStagingBuffer);
-			sendBuffers = std::move(other.sendBuffers);
-			receiveBuffers = std::move(other.receiveBuffers);
-			sendWriteIndex.store(other.sendWriteIndex.load(std::memory_order::acquire), std::memory_order::release);
-			receiveWriteIndex.store(other.receiveWriteIndex.load(std::memory_order::acquire), std::memory_order::release);
-		}
+		ReplicationContext(ReplicationContext&&) = default;
 
 		~ReplicationContext() {
 			for (auto& [netID, snapshot] : entityTable) {
@@ -48,8 +39,6 @@ namespace Carnival::ECS {
 		// Unreliable Data
 		std::array<MessageBuffer, 2> sendBuffers{};
 		std::array<MessageBuffer, 2> receiveBuffers{};
-		std::atomic<uint32_t> sendWriteIndex{};
-		std::atomic<uint32_t> receiveWriteIndex{};
 	};
 
 	// ================================================================================================ //
@@ -351,6 +340,11 @@ namespace Carnival::ECS {
 			}
 		};
 
+		enum class WorldPhase : uint8_t {
+			EXECUTION,
+			MAINTENANCE,
+			STABLE,
+		};
 	public:
 		World() {
 			m_Shards.emplace_back();
@@ -485,12 +479,13 @@ namespace Carnival::ECS {
 		void replicateRecords(uint32_t shardIndex);
 		void replicateUnreliable(uint32_t shardIndex);
 	private:
-		ReplicationBuffer<1024> m_ReplicationBuffer;
+		ReplicationBuffer<1024> m_ReplicationBuffer; // needs to be per-shard
 		EntityManager m_EntityManager;
 		NetIDGenerator m_IDGen;
 		ComponentRegistry m_Registry;
-		std::vector<ReplicationContext> m_Shards{}; // Requires Manual Cleanup!!
+		std::vector<ReplicationContext> m_Shards{};
 		std::map<uint64_t, ArchetypeRecord> m_Archetypes;
+		std::atomic<WorldPhase> m_Phase{ WorldPhase::MAINTENANCE };
 	};
 
 }

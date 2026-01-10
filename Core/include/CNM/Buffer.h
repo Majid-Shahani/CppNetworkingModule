@@ -56,11 +56,6 @@ namespace Carnival {
 			}
 			return *this;
 		}
-
-		// for debug, must call startUse and check results
-		// if returned true, you can use
-		bool startUse() { return !m_InUse.test_and_set(std::memory_order_acq_rel); }
-		void stopUse() { m_InUse.clear(std::memory_order_release); }
 		// ========================================== MESSAGE WRITE ======================================= //
 		
 		// Returns Address, call markReady once message has been written
@@ -110,7 +105,6 @@ namespace Carnival {
 		uint32_t m_Capacity;
 		uint32_t m_Size{};
 		bool m_MessageInFlight = false;
-		std::atomic_flag m_InUse{};
 	};
 
 	// Replication Buffer :

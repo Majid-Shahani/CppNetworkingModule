@@ -23,7 +23,6 @@ namespace Carnival::ECS {
 
 	void World::replicateRecords(uint32_t shardIndex)
 	{
-		std::print("Replicating Records:\n");
 		auto& currShard = m_Shards[shardIndex];
 		Entity eID{};
 		while (m_ReplicationBuffer.pop(eID)) {
@@ -45,6 +44,8 @@ namespace Carnival::ECS {
 	}
 	void World::replicateUnreliable(uint32_t shardIndex)
 	{
+		auto& currShard = m_Shards[shardIndex];
+		
 	}
 
 	void World::destroyEntity(Entity e)
@@ -59,17 +60,24 @@ namespace Carnival::ECS {
 	}
 	void World::startUpdate()
 	{
+		m_Phase.store(WorldPhase::EXECUTION, std::memory_order::release);
 		// update ecs with replication
 		// phase barrier
 	}
 	void World::endUpdate()
 	{
+		// Check if NetManager is running, force stop or wait
+		m_Phase.store(WorldPhase::MAINTENANCE, std::memory_order::release);
 		std::erase_if(m_Archetypes, [](const auto& pair) {
 			return pair.second.arch->getEntityCount() == 0;
 			});
+
 		for (int i{}; i < m_Shards.size(); i++) {
 			replicateRecords(i);
 			replicateUnreliable(i);
 		}
+
+		m_Phase.store(WorldPhase::STABLE, std::memory_order::release);
+
 	}
 }

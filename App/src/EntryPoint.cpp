@@ -62,13 +62,11 @@ int main() {
 	
 	// =========================================== INIT ECS ========================================= //
 	World w{};
-	w.startUpdate();
 	w.registerComponents<Position, World::OnTickNetworkComponent, World::OnUpdateNetworkComponent>();
 	Entity onTickEntity = w.createEntity<Position, World::OnTickNetworkComponent>();
 	Entity onUpdateEntity = w.createEntity<Position, World::OnUpdateNetworkComponent>();
 	w.removeComponentsFromEntity<World::OnUpdateNetworkComponent>(onUpdateEntity);
 	w.addComponentsToEntity<World::OnUpdateNetworkComponent>(onUpdateEntity);
-	w.endUpdate();
 	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests
