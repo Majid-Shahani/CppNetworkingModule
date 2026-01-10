@@ -28,7 +28,7 @@ namespace Carnival {
 	
 	class MessageBuffer {
 	public:
-		MessageBuffer(uint32_t bufferSize)
+		MessageBuffer(uint32_t bufferSize = 3000)
 			: m_Data{ nullptr }, m_Capacity{ bufferSize } {
 			CL_CORE_ASSERT(m_Capacity != 0, "buffer must have starting size");
 			m_Data = new std::byte[m_Capacity];
@@ -74,7 +74,7 @@ namespace Carnival {
 			m_Size += size;
 			return addr;
 		}
-		void markReady() noexcept { m_MessageInFlight = false; }
+		void endMessage() noexcept { m_MessageInFlight = false; }
 		
 		// ========================================== MESSAGE READ ======================================= //
 		std::span<const std::byte> getReadyMessages() { return { m_Data, m_Data + m_Size }; }
@@ -200,7 +200,7 @@ namespace Carnival {
 		static constexpr uint32_t getIndex(uint32_t idx) { return idx & (_size - 1); }
 	private:
 		alignas(std::hardware_destructive_interference_size) std::atomic<uint32_t> writeIndex{};
-		alignas(std::hardware_destructive_interference_size) std::atomic<uint64_t>* data{ nullptr };
-		alignas(std::hardware_destructive_interference_size) std::atomic<uint32_t> readIndex{};
+		std::atomic<uint64_t>* data{ nullptr }; // plenty of real sharing
+		std::atomic<uint32_t> readIndex{}; // Single reader, read and writes are phased, no false sharing
 	};
 }

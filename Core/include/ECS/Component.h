@@ -7,6 +7,7 @@
 
 namespace Carnival::ECS {
 
+	// could later have a list of archetypes that have this with component index, for easier queries.
 	struct ComponentMetadata {
 		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
 

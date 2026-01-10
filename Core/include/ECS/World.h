@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <ranges>
 #include <cstdint>
 #include <span>
@@ -11,14 +12,8 @@
 
 #include <CNM/NetworkManager.h>
 #include <CNM/Buffer.h>
-#include <CNM/Replication.h>
 
 namespace Carnival::ECS {
-	class NetIDManager {
-	public:
-	private:
-
-	};
 
 	enum class QueryPolicy : uint8_t {
 		ReadOnly = 0,
@@ -28,9 +23,17 @@ namespace Carnival::ECS {
 		RW = ReadWrite,
 	};
 
+	struct ReplicationContext {
+		std::array<MessageBuffer, 2> sendBuffers;
+		std::array<MessageBuffer, 2> receiveBuffers;
+		std::atomic<uint32_t> sendWriteIndex{};
+		std::atomic<uint32_t> receiveWriteIndex{};
+	};
+
 	// ================================================================================================ //
 	// ========================================== World =============================================== //
 	// ================================================================================================ //
+
 	class World {
 	private:
 		template<QueryPolicy P, ECSComponent C>
@@ -93,7 +96,6 @@ namespace Carnival::ECS {
 			C* current;
 			C* end;
 		};
-
 		template<QueryPolicy P, ECSComponent C>
 		struct InnerNetworkedIter {
 			InnerNetworkedIter(C* base, C* end, Entity* entity, World& refWorld)
@@ -255,7 +257,6 @@ namespace Carnival::ECS {
 			bool isDone{ false };
 			// 6 Bytes of Padding
 		};
-
 		template <QueryPolicy P, ECSComponent C>
 		struct ComponentRange {
 			using Iterator = OuterIter<P, C>;
@@ -293,8 +294,7 @@ namespace Carnival::ECS {
 
 		struct OnUpdateNetworkComponent {
 			uint32_t networkID{};
-			bool dirty{ false };
-			uint8_t padding[3]{};
+			std::atomic_flag dirty{};
 
 			static constexpr uint64_t ID{ utils::fnv1a64("OnUpdateNetworkComponent") };
 			static void construct(void* dest, void* world, Entity e) noexcept {
@@ -306,7 +306,7 @@ namespace Carnival::ECS {
 				auto ptr = static_cast<OnUpdateNetworkComponent*>(dest);
 				auto w = static_cast<World*>(world);
 				w->freeNetID(ptr->networkID);
-				std::memset(dest, 0, sizeof(OnUpdateNetworkComponent));
+				ptr->dirty.clear();
 			}
 			static void copy(const void* src, void* dest, uint32_t count) {
 				memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
@@ -388,8 +388,7 @@ namespace Carnival::ECS {
 				m_EntityManager.updateEntityLocation(swappedEntity, rec.pArchetype, i);
 			}
 			m_EntityManager.updateEntityLocation(e, it->second.arch.get(), index);
-		}
-		
+		}	
 		template <ECSComponent... Ts>
 		void removeComponentsFromEntity(Entity e) {
 			const auto& rec{ m_EntityManager.get(e) };
@@ -449,13 +448,10 @@ namespace Carnival::ECS {
 		void freeNetID(uint32_t netID) { m_IDGen.destroyID(netID); }
 
 		void markDirty(Entity e) {
-			std::print("Mark dirty called for Entity: {}\n", e);
 			auto entry{ m_EntityManager.get(e) };
 			auto arr{ static_cast<OnUpdateNetworkComponent*>(entry.pArchetype->getComponentData(OnUpdateNetworkComponent::ID)) };
-			if (arr[entry.index].dirty == true) return;
-			arr[entry.index].dirty = true;
-			std::print("Entity {} marked dirty!\n", e);
-			// submit replication record.
+			if (arr[entry.index].dirty.test_and_set(std::memory_order::acq_rel)) return;
+			m_ReplicationBuffer.push(e);
 		}
 
 		NetworkFlags getNetFlag(std::span<uint64_t> compIDs) {
@@ -473,12 +469,16 @@ namespace Carnival::ECS {
 						if (id2 == OnUpdateNetworkComponent::ID) return true;
 			return false;
 		}
+
+		void replicateRecords();
+		void replicateUnreliable();
 	private:
+		ReplicationBuffer<1024> m_ReplicationBuffer;
 		EntityManager m_EntityManager;
-		ComponentRegistry m_Registry;
 		NetIDGenerator m_IDGen;
+		ComponentRegistry m_Registry;
+		std::vector<ReplicationContext> m_Shards{};
 		std::unordered_map<uint64_t, ArchetypeRecord> m_Archetypes;
-		Network::Replicator m_Replicator;
 	};
 
 }

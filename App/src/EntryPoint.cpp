@@ -12,7 +12,7 @@ using namespace ECS;
 using namespace std::chrono_literals;
 
 struct Position {
-	float x, y, z;
+	float x{}, y{}, z{};
 
 	static constexpr uint64_t ID{ fnv1a64("PositionComponent") };
 	static void construct(void* dest, void* world, Entity e) noexcept {
@@ -25,8 +25,22 @@ struct Position {
 	static void copy(const void* src, void* dest, uint32_t count = 1) {
 		memcpy(dest, src, sizeof(Position) * count);
 	}
+
 	static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count = 1) {
-		
+		constexpr uint64_t stride = sizeof(float) * 3;
+		auto pSrc = static_cast<const Position*>(src);
+
+		auto out = outbuffer.startMessage(sizeof(float) * 3 * count);
+		if (!out) return;
+
+		for (uint32_t i{}; i < count; i++) {
+			std::byte* dst = out + i * stride;
+			std::memcpy(dst, &pSrc[i].x, sizeof(float));
+			std::memcpy(dst + sizeof(float), &pSrc[i].y, sizeof(float));
+			std::memcpy(dst + (sizeof(float) * 2), &pSrc[i].z, sizeof(float));
+		}
+
+		outbuffer.endMessage();
 	}
 	static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count = 1) {
 		
@@ -45,7 +59,7 @@ void PositionMoverSystem(World& w, float delta) {
 
 int main() {
 	// ========================================= INIT NETWORK ======================================= //
-	Replicator rep{};
+	
 	// =========================================== INIT ECS ========================================= //
 	World w{};
 	w.startUpdate();
