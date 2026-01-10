@@ -237,6 +237,20 @@ namespace Carnival::ECS {
 		return { e, UINT32_MAX };
 	}
 
+	void Archetype::serializeEntity(Entity id, MessageBuffer& staging) {
+		for (uint32_t i{}; i < m_Entities.size(); i++) {
+			if (m_Entities[i] == id) serializeIndex(i, staging);
+			return;
+		}
+	}
+	void Archetype::serializeIndex(uint32_t idx, MessageBuffer& staging) {
+		staging.reset();
+		for (auto& c : m_Components) {
+			c.metadata.serializeFn(static_cast<uint8_t*>(c.pComponentData) + (idx * c.metadata.sizeOfComponent), staging, 1);
+		}
+	}
+
+
 	Archetype::~Archetype() noexcept {
 		for (auto& cc : m_Components) {
 			if (cc.pComponentData != nullptr) {

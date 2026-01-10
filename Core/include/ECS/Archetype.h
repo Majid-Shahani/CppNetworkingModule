@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <CNM/macros.h>
+#include <CNM/Buffer.h>
 #include <ECS/Entity.h>
 #include <ECS/Component.h>
 
@@ -34,6 +35,9 @@ namespace Carnival::ECS {
 		std::pair<uint32_t, uint32_t>	removeEntity(Entity entity) noexcept;
 		std::pair<uint32_t, uint32_t>	removeEntityAt(uint32_t index) noexcept;
 		std::pair<uint32_t, uint32_t>	removeLastEntity() noexcept;
+		
+		void							serializeEntity(Entity e, MessageBuffer& staging);
+		void							serializeIndex(uint32_t index, MessageBuffer& staging);
 
 		inline uint32_t					getEntityCount() const noexcept { return m_EntityCount; }
 		inline Entity					getEntity(uint32_t index) const noexcept { return m_Entities[index]; }

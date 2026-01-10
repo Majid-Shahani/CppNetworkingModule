@@ -80,6 +80,7 @@ namespace Carnival {
 		std::span<const std::byte> getReadyMessages() { return { m_Data, m_Data + m_Size }; }
 
 		// =============================================================================================== //
+		uint32_t size() const noexcept { return m_Size; }
 		void reset() noexcept { m_Size = 0; }
 		void shrinkToFitOrSize(uint32_t newCap = 1) {
 			if (newCap < m_Size) newCap = m_Size;

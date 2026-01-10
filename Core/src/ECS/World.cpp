@@ -20,6 +20,33 @@ namespace Carnival::ECS {
 		
 		return e;
 	}
+
+	void World::replicateRecords(uint32_t shardIndex)
+	{
+		std::print("Replicating Records:\n");
+		auto& currShard = m_Shards[shardIndex];
+		Entity eID{};
+		while (m_ReplicationBuffer.pop(eID)) {
+			auto rec = m_EntityManager.get(eID);
+			rec.pArchetype->serializeIndex(rec.index, currShard.reliableStagingBuffer);
+
+			auto pData = rec.pArchetype->getComponentData(OnUpdateNetworkComponent::ID);
+			uint64_t NetID = (static_cast<OnUpdateNetworkComponent*>(pData) + rec.index)->networkID;
+			
+			auto& snapshot = currShard.entityTable[NetID];
+			snapshot.version++;
+			snapshot.size = currShard.reliableStagingBuffer.size();
+
+			if (snapshot.pSerializedData) delete[] snapshot.pSerializedData;
+			snapshot.pSerializedData = new std::byte[currShard.reliableStagingBuffer.size()]();
+			auto toBeCopied = currShard.reliableStagingBuffer.getReadyMessages();
+			std::memcpy(snapshot.pSerializedData, toBeCopied.data(), toBeCopied.size());
+		}
+	}
+	void World::replicateUnreliable(uint32_t shardIndex)
+	{
+	}
+
 	void World::destroyEntity(Entity e)
 	{
 		const auto& rec = m_EntityManager.get(e);
@@ -40,6 +67,9 @@ namespace Carnival::ECS {
 		std::erase_if(m_Archetypes, [](const auto& pair) {
 			return pair.second.arch->getEntityCount() == 0;
 			});
-		// signal read only phase
+		for (int i{}; i < m_Shards.size(); i++) {
+			replicateRecords(i);
+			replicateUnreliable(i);
+		}
 	}
 }

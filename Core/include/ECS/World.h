@@ -24,11 +24,30 @@ namespace Carnival::ECS {
 	};
 
 	struct ReplicationContext {
+		ReplicationContext() = default;
+		// Must Guarantee No concurrent access during move, otherwise UB
+		ReplicationContext(ReplicationContext&& other) noexcept
+		{
+			entityTable = std::move(other.entityTable);
+			reliableStagingBuffer = std::move(other.reliableStagingBuffer);
+			sendBuffers = std::move(other.sendBuffers);
+			receiveBuffers = std::move(other.receiveBuffers);
+			sendWriteIndex.store(other.sendWriteIndex.load(std::memory_order::acquire), std::memory_order::release);
+			receiveWriteIndex.store(other.receiveWriteIndex.load(std::memory_order::acquire), std::memory_order::release);
+		}
+
+		~ReplicationContext() {
+			for (auto& [netID, snapshot] : entityTable) {
+				if (snapshot.pSerializedData) delete[] snapshot.pSerializedData;
+			}
+		}
 		// Reliable Data
-		std::map<uint64_t, EntitySnapshot> entityTable;
+		// TODO: Event Log
+		std::map<uint64_t, EntitySnapshot> entityTable{}; // not Thread Safe
+		MessageBuffer reliableStagingBuffer{ 256 };
 		// Unreliable Data
-		std::array<MessageBuffer, 2> sendBuffers;
-		std::array<MessageBuffer, 2> receiveBuffers;
+		std::array<MessageBuffer, 2> sendBuffers{};
+		std::array<MessageBuffer, 2> receiveBuffers{};
 		std::atomic<uint32_t> sendWriteIndex{};
 		std::atomic<uint32_t> receiveWriteIndex{};
 	};
@@ -333,6 +352,10 @@ namespace Carnival::ECS {
 		};
 
 	public:
+		World() {
+			m_Shards.emplace_back();
+		}
+
 		template <ECSComponent... Ts>
 		Entity createEntity() {
 			std::vector<uint64_t> IDs;
@@ -459,14 +482,14 @@ namespace Carnival::ECS {
 			return false;
 		}
 
-		void replicateRecords();
-		void replicateUnreliable();
+		void replicateRecords(uint32_t shardIndex);
+		void replicateUnreliable(uint32_t shardIndex);
 	private:
 		ReplicationBuffer<1024> m_ReplicationBuffer;
 		EntityManager m_EntityManager;
 		NetIDGenerator m_IDGen;
 		ComponentRegistry m_Registry;
-		std::vector<ReplicationContext> m_Shards{};
+		std::vector<ReplicationContext> m_Shards{}; // Requires Manual Cleanup!!
 		std::map<uint64_t, ArchetypeRecord> m_Archetypes;
 	};
 
