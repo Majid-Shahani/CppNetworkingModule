@@ -57,7 +57,7 @@ namespace Carnival {
 			return *this;
 		}
 
-		// for correct behavior, must call startUse and check results
+		// for debug, must call startUse and check results
 		// if returned true, you can use
 		bool startUse() { return !m_InUse.test_and_set(std::memory_order_acq_rel); }
 		void stopUse() { m_InUse.clear(std::memory_order_release); }
@@ -203,4 +203,11 @@ namespace Carnival {
 		std::atomic<uint64_t>* data{ nullptr }; // plenty of real sharing
 		std::atomic<uint32_t> readIndex{}; // Single reader, read and writes are phased, no false sharing
 	};
+
+
+	/*
+	* Reliable Buffer:
+	* 
+	* 
+	*/
 }

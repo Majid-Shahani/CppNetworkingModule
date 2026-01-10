@@ -5,7 +5,7 @@
 #include <ranges>
 #include <cstdint>
 #include <span>
-#include <unordered_map>
+#include <map>
 
 #include <ECS/ECS.h>
 #include <CNM/macros.h>
@@ -24,6 +24,9 @@ namespace Carnival::ECS {
 	};
 
 	struct ReplicationContext {
+		// Reliable Data
+		std::map<uint64_t, EntitySnapshot> entityTable;
+		// Unreliable Data
 		std::array<MessageBuffer, 2> sendBuffers;
 		std::array<MessageBuffer, 2> receiveBuffers;
 		std::atomic<uint32_t> sendWriteIndex{};
@@ -293,20 +296,13 @@ namespace Carnival::ECS {
 
 
 		struct OnUpdateNetworkComponent {
-			uint32_t networkID{};
-			std::atomic_flag dirty{};
+			uint64_t networkID{};
+			bool dirty{};
 
 			static constexpr uint64_t ID{ utils::fnv1a64("OnUpdateNetworkComponent") };
 			static void construct(void* dest, void* world, Entity e) noexcept {
-				auto ptr = static_cast<OnUpdateNetworkComponent*>(dest);
-				World* w = static_cast<World*>(world);
-				ptr->networkID = w->getNetID(e);
 			}
 			static void destruct(void* dest, void* world, Entity e) noexcept {
-				auto ptr = static_cast<OnUpdateNetworkComponent*>(dest);
-				auto w = static_cast<World*>(world);
-				w->freeNetID(ptr->networkID);
-				ptr->dirty.clear();
 			}
 			static void copy(const void* src, void* dest, uint32_t count) {
 				memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
@@ -319,28 +315,20 @@ namespace Carnival::ECS {
 			}
 		};
 		struct OnTickNetworkComponent {
-			uint32_t networkID{};
+			uint64_t networkID{};
 
 			static constexpr uint64_t ID{ utils::fnv1a64("OnTickNetworkComponent") };
 			static void construct(void* dest, void* world, Entity e) noexcept {
-				auto ptr = static_cast<OnTickNetworkComponent*>(dest);
-				World* w = static_cast<World*>(world);
-				ptr->networkID = w->getNetID(e);
+				std::memset(dest, 0, sizeof(OnTickNetworkComponent));
 			}
 			static void destruct(void* dest, void* world, Entity e) noexcept {
-				auto ptr = static_cast<OnTickNetworkComponent*>(dest);
-				auto w = static_cast<World*>(world);
-				w->freeNetID(ptr->networkID);
-				std::memset(dest, 0, sizeof(OnTickNetworkComponent));
 			}
 			static void copy(const void* src, void* dest, uint32_t count) {
 				memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
 			}
 			static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count) {
-				// static_cast<buffer*>(out)->put_uint32(static_cast<const OnTickNetworkComponent*>(src)->networkID);
 			}
-			static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count) {
-				// static_cast<OnTickNetworkComponent*>(dest)->networkID = static_cast<const buffer*>(in)->read_uint32();
+			static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count) {;
 			}
 		};
 
@@ -444,13 +432,14 @@ namespace Carnival::ECS {
 	private:
 		Entity createEntity(std::vector<uint64_t> components, NetworkFlags flag = NetworkFlags::LOCAL);
 
-		uint32_t getNetID(Entity eID) { return m_IDGen.createID(eID); }
+		uint64_t getNetID(Entity eID) { return m_IDGen.createID(eID); }
 		void freeNetID(uint32_t netID) { m_IDGen.destroyID(netID); }
 
 		void markDirty(Entity e) {
 			auto entry{ m_EntityManager.get(e) };
 			auto arr{ static_cast<OnUpdateNetworkComponent*>(entry.pArchetype->getComponentData(OnUpdateNetworkComponent::ID)) };
-			if (arr[entry.index].dirty.test_and_set(std::memory_order::acq_rel)) return;
+			if (arr[entry.index].dirty == true) return;
+			arr[entry.index].dirty = true;
 			m_ReplicationBuffer.push(e);
 		}
 
@@ -478,7 +467,7 @@ namespace Carnival::ECS {
 		NetIDGenerator m_IDGen;
 		ComponentRegistry m_Registry;
 		std::vector<ReplicationContext> m_Shards{};
-		std::unordered_map<uint64_t, ArchetypeRecord> m_Archetypes;
+		std::map<uint64_t, ArchetypeRecord> m_Archetypes;
 	};
 
 }

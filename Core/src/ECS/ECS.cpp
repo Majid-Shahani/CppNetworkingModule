@@ -64,30 +64,34 @@ namespace Carnival::ECS {
 	// ================================================================================================ //
 	// ==================================== NetIDGenerator ============================================ //
 	// ================================================================================================ //
+	static constexpr uint64_t getPack(uint32_t slot, uint32_t seq) { return (static_cast<uint64_t>(slot) << 32) | seq; }
+	static constexpr uint32_t getSlot(uint64_t value) { return static_cast<uint32_t>(value >> 32); }
+	static constexpr uint32_t getSeq(uint64_t value) { return static_cast<uint32_t>(value); }
 
-	uint32_t Carnival::ECS::NetIDGenerator::createID(Entity entityID)
+	uint64_t Carnival::ECS::NetIDGenerator::createID(Entity entityID)
 	{
 		if (!m_FreeIDs.empty()) {
-			uint32_t id = m_FreeIDs[m_FreeIDs.size() - 1];
+			uint32_t slot = m_FreeIDs[m_FreeIDs.size() - 1];
 			m_FreeIDs.pop_back();
-			m_Entries[id] = { entityID };
-			return id;
+			m_Entries[slot] = getPack(entityID, getSeq(m_Entries[slot]));
+			return getPack(slot, getSeq(m_Entries[slot]));
 		}
-		m_Entries.push_back({ entityID });
-		return static_cast<uint32_t>(m_Entries.size() - 1);
+		m_Entries.push_back(getPack(entityID, 1));
+		return getPack(static_cast<uint32_t>(m_Entries.size() - 1), 1);
 	}
 
-	Entity Carnival::ECS::NetIDGenerator::getEntity(uint32_t netID)
+	Entity Carnival::ECS::NetIDGenerator::getEntity(uint64_t netID)
 	{
-		CL_CORE_ASSERT(netID < m_Entries.size(), "Entity access for out of bounds entity requested");
-		return m_Entries[netID].entityID;
+		CL_CORE_ASSERT(getSlot(netID) < m_Entries.size(), "Entity access for out of bounds entity requested");
+		if (getSeq(netID) != getSeq(m_Entries[getSlot(netID)])) return UINT32_MAX;
+		return getSlot(m_Entries[getSlot(netID)]);
 	}
 
-	void Carnival::ECS::NetIDGenerator::destroyID(uint32_t netID)
+	void Carnival::ECS::NetIDGenerator::destroyID(uint64_t netID)
 	{
-		CL_CORE_ASSERT(netID < m_Entries.size(), "Entity access for out of bounds entity requested");
-		m_Entries[netID] = {0};
-		m_FreeIDs.push_back(netID);
+		CL_CORE_ASSERT(getSlot(netID) < m_Entries.size(), "Entity access for out of bounds entity requested");
+		m_Entries[getSlot(netID)] = getPack(0, getSeq(m_Entries[getSlot(netID)]) + 1);
+		m_FreeIDs.push_back(getSlot(netID));
 	}
 
 	void Carnival::ECS::NetIDGenerator::reset()

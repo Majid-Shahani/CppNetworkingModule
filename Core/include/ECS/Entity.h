@@ -20,8 +20,10 @@ namespace Carnival::ECS {
 		EntityStatus status;
 	};
 
-	struct NetEntityInfo {
-		Entity entityID{};
+	struct EntitySnapshot {
+		uint64_t version{};
+		uint64_t size{};
+		void* pSerializedData{ nullptr };
 	};
 
 	// Not Thread safe, Change
@@ -43,12 +45,12 @@ namespace Carnival::ECS {
 	};
 	class NetIDGenerator {
 	public:
-		uint32_t	createID(Entity entityID);
-		Entity		getEntity(uint32_t netID);
-		void		destroyID(uint32_t netID);
+		uint64_t	createID(Entity entityID);
+		Entity		getEntity(uint64_t netID);
+		void		destroyID(uint64_t netID);
 		void		reset();
 	private:
-		std::vector<Entity> m_FreeIDs{};
-		std::vector<NetEntityInfo> m_Entries{};
+		std::vector<uint32_t> m_FreeIDs{};
+		std::vector<uint64_t> m_Entries{};
 	};
 }
