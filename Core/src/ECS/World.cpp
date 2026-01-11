@@ -30,7 +30,8 @@ namespace Carnival::ECS {
 			rec.pArchetype->serializeIndex(rec.index, currShard.reliableStagingBuffer);
 
 			auto pData = rec.pArchetype->getComponentData(OnUpdateNetworkComponent::ID);
-			uint64_t NetID = (static_cast<OnUpdateNetworkComponent*>(pData) + rec.index)->networkID;
+			auto comp = (static_cast<OnUpdateNetworkComponent*>(pData) + rec.index);
+			uint64_t NetID = comp->networkID;
 			
 			auto& snapshot = currShard.entityTable[NetID];
 			snapshot.version++;
@@ -40,6 +41,8 @@ namespace Carnival::ECS {
 			snapshot.pSerializedData = new std::byte[currShard.reliableStagingBuffer.size()]();
 			auto toBeCopied = currShard.reliableStagingBuffer.getReadyMessages();
 			std::memcpy(snapshot.pSerializedData, toBeCopied.data(), toBeCopied.size());
+
+			comp->dirty = false;
 		}
 	}
 	void World::replicateUnreliable(uint32_t shardIndex)
@@ -62,7 +65,6 @@ namespace Carnival::ECS {
 	{
 		m_Phase.store(WorldPhase::EXECUTION, std::memory_order::release);
 		// update ecs with replication
-		// phase barrier
 	}
 	void World::endUpdate()
 	{
@@ -78,6 +80,5 @@ namespace Carnival::ECS {
 		}
 
 		m_Phase.store(WorldPhase::STABLE, std::memory_order::release);
-
 	}
 }
