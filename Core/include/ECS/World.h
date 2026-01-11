@@ -345,8 +345,15 @@ namespace Carnival::ECS {
 			MAINTENANCE,
 			STABLE,
 		};
+		struct BufferIndex {
+			bool writerActive{ false };
+			bool writerIndex{ false }; // false = 0, true = 1
+			bool readerIndex{ true };
+			bool readerActive{ false };
+		};
 	public:
 		World() {
+			static_assert(std::atomic<BufferIndex>::is_always_lock_free, "Struct is not lock Free!");
 			m_Shards.emplace_back();
 		}
 
@@ -486,6 +493,7 @@ namespace Carnival::ECS {
 		std::vector<ReplicationContext> m_Shards{};
 		std::map<uint64_t, ArchetypeRecord> m_Archetypes;
 		std::atomic<WorldPhase> m_Phase{ WorldPhase::MAINTENANCE };
+		std::atomic<BufferIndex> m_UnreliableIndex;
 	};
 
 }

@@ -48,7 +48,13 @@ namespace Carnival::ECS {
 	void World::replicateUnreliable(uint32_t shardIndex)
 	{
 		auto& currShard = m_Shards[shardIndex];
-		
+		auto idx = m_UnreliableIndex.load(std::memory_order::acquire);
+
+		for (auto& [id, rec] : m_Archetypes) {
+			if (rec.flags == NetworkFlags::ON_TICK) {
+
+			}
+		}
 	}
 
 	void World::destroyEntity(Entity e)
@@ -73,12 +79,31 @@ namespace Carnival::ECS {
 		std::erase_if(m_Archetypes, [](const auto& pair) {
 			return pair.second.arch->getEntityCount() == 0;
 			});
+		m_Phase.store(WorldPhase::STABLE, std::memory_order::release);
+
+		// Set Replication Active
+		auto expected = m_UnreliableIndex.load(std::memory_order::relaxed);
+		BufferIndex idx{};
+		do {
+			idx = expected;
+			idx.writerActive = true;
+		} while (!m_UnreliableIndex.compare_exchange_strong(expected, idx, std::memory_order::release, std::memory_order::relaxed));
 
 		for (int i{}; i < m_Shards.size(); i++) {
 			replicateRecords(i);
 			replicateUnreliable(i);
 		}
 
-		m_Phase.store(WorldPhase::STABLE, std::memory_order::release);
+		// Swap Buffers, Set Replication Inactive
+		do {
+			expected = m_UnreliableIndex.load(std::memory_order::relaxed);
+			idx = expected;
+			if (!idx.readerActive) {
+				idx.writerIndex ^= 1;
+				idx.readerIndex ^= 1;
+			}
+			idx.writerActive = false;
+		} while (!m_UnreliableIndex.compare_exchange_strong(expected, idx, std::memory_order::release, std::memory_order::relaxed));
+
 	}
 }
