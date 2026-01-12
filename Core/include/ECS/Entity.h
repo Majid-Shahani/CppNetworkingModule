@@ -20,12 +20,6 @@ namespace Carnival::ECS {
 		EntityStatus status;
 	};
 
-	struct EntitySnapshot {
-		uint64_t version{};
-		uint64_t size{};
-		void* pSerializedData{ nullptr };
-	};
-
 	// Not Thread safe, Change
 	class EntityManager {
 	public:

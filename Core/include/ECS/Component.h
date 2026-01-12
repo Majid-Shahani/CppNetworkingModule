@@ -72,4 +72,44 @@ namespace Carnival::ECS {
 	private:
 		std::vector<ComponentMetadata> m_MetaData;
 	};
+
+	struct OnUpdateNetworkComponent {
+		uint64_t networkID{};
+		uint64_t version{};
+		bool dirty{};
+
+		static constexpr uint64_t ID{ utils::fnv1a64("OnUpdateNetworkComponent") };
+		static void construct(void* dest, void* world, Entity e) noexcept {
+		}
+		static void destruct(void* dest, void* world, Entity e) noexcept {
+		}
+		static void copy(const void* src, void* dest, uint32_t count) {
+			memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
+		}
+		static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count) {
+
+		}
+		static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count) {
+			// need index or handled internally
+		}
+	};
+	struct OnTickNetworkComponent {
+		uint64_t networkID{};
+
+		static constexpr uint64_t ID{ utils::fnv1a64("OnTickNetworkComponent") };
+		static void construct(void* dest, void* world, Entity e) noexcept {
+			std::memset(dest, 0, sizeof(OnTickNetworkComponent));
+		}
+		static void destruct(void* dest, void* world, Entity e) noexcept {
+		}
+		static void copy(const void* src, void* dest, uint32_t count) {
+			memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
+		}
+		static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count) {
+		}
+		static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count) {
+			;
+		}
+	};
+
 }

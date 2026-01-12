@@ -21,7 +21,7 @@ namespace Carnival::ECS {
 		return e;
 	}
 
-	void World::replicateRecords(uint32_t shardIndex)
+	void World::updateReliable(uint32_t shardIndex)
 	{
 		auto& currShard = m_Shards[shardIndex];
 		Entity eID{};
@@ -54,6 +54,7 @@ namespace Carnival::ECS {
 
 		for (auto& [id, rec] : m_Archetypes) {
 			if (rec.flags == NetworkFlags::ON_TICK) {
+				msgBuffer.putRecordType(Network::WireFormat::RecordType::ARCHETYPE_DATA);
 				msgBuffer.putArchetypeData(id, rec.arch->getEntityCount());
 				rec.arch->serializeArchetype(msgBuffer);
 			}
@@ -94,7 +95,7 @@ namespace Carnival::ECS {
 
 		// Replicate Records
 		for (int i{}; i < m_Shards.size(); i++) {
-			replicateRecords(i);
+			updateReliable(i);
 			replicateUnreliable(i);
 		}
 

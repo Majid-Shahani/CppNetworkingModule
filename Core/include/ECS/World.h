@@ -10,8 +10,9 @@
 #include <ECS/ECS.h>
 #include <CNM/macros.h>
 
-#include <CNM/NetworkManager.h>
 #include <CNM/Buffer.h>
+#include <CNM/Replication.h>
+#include <CNM/NetworkManager.h>
 
 namespace Carnival::ECS {
 
@@ -22,28 +23,6 @@ namespace Carnival::ECS {
 		RO = ReadOnly,
 		RW = ReadWrite,
 	};
-
-	struct ReplicationContext {
-		ReplicationContext() = default;
-		ReplicationContext(ReplicationContext&&) = default;
-
-		~ReplicationContext() {
-			for (auto& [netID, snapshot] : entityTable) {
-				if (snapshot.pSerializedData) delete[] snapshot.pSerializedData;
-			}
-		}
-		// Reliable Data
-		// TODO: Event Log
-		std::map<uint64_t, EntitySnapshot> entityTable{}; // not Thread Safe
-		MessageBuffer reliableStagingBuffer{ 256 };
-		// Unreliable Data
-		std::array<MessageBuffer, 2> sendBuffers{};
-		std::array<MessageBuffer, 2> receiveBuffers{};
-	};
-
-	// ================================================================================================ //
-	// ========================================== World =============================================== //
-	// ================================================================================================ //
 
 	class World {
 	private:
@@ -302,54 +281,10 @@ namespace Carnival::ECS {
 			std::vector<InnerNetworkedIter<P, C>> networkeds;
 		};
 
-
-		struct OnUpdateNetworkComponent {
-			uint64_t networkID{};
-			bool dirty{};
-
-			static constexpr uint64_t ID{ utils::fnv1a64("OnUpdateNetworkComponent") };
-			static void construct(void* dest, void* world, Entity e) noexcept {
-			}
-			static void destruct(void* dest, void* world, Entity e) noexcept {
-			}
-			static void copy(const void* src, void* dest, uint32_t count) {
-				memcpy(dest, src, sizeof(OnUpdateNetworkComponent) * count);
-			}
-			static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count) {
-
-			}
-			static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count) {
-				// need index or handled internally
-			}
-		};
-		struct OnTickNetworkComponent {
-			uint64_t networkID{};
-
-			static constexpr uint64_t ID{ utils::fnv1a64("OnTickNetworkComponent") };
-			static void construct(void* dest, void* world, Entity e) noexcept {
-				std::memset(dest, 0, sizeof(OnTickNetworkComponent));
-			}
-			static void destruct(void* dest, void* world, Entity e) noexcept {
-			}
-			static void copy(const void* src, void* dest, uint32_t count) {
-				memcpy(dest, src, sizeof(OnTickNetworkComponent) * count);
-			}
-			static void serialize(const void* src, MessageBuffer& outbuffer, uint32_t count) {
-			}
-			static void deserialize(void* dest, const MessageBuffer& inBuffer, uint32_t count) {;
-			}
-		};
-
 		enum class WorldPhase : uint8_t {
 			EXECUTION,
 			MAINTENANCE,
 			STABLE,
-		};
-		struct BufferIndex {
-			bool writerActive{ false };
-			bool writerIndex{ false }; // false = 0, true = 1
-			bool readerIndex{ true };
-			bool readerActive{ false };
 		};
 	public:
 		World() {
@@ -483,7 +418,7 @@ namespace Carnival::ECS {
 			return false;
 		}
 
-		void replicateRecords(uint32_t shardIndex);
+		void updateReliable(uint32_t shardIndex);
 		void replicateUnreliable(uint32_t shardIndex);
 	private:
 		ReplicationBuffer<1024> m_ReplicationBuffer; // needs to be per-shard

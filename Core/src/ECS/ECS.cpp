@@ -251,7 +251,10 @@ namespace Carnival::ECS {
 	}
 	void Archetype::serializeArchetype(MessageBuffer& buff) const {
 		for (auto& c : m_Components) {
-			c.metadata.serializeFn(c.pComponentData, buff, m_EntityCount);
+			if ((c.metadata.componentTypeID != OnTickNetworkComponent::ID)
+				&& c.metadata.componentTypeID != OnUpdateNetworkComponent::ID) {
+				c.metadata.serializeFn(c.pComponentData, buff, m_EntityCount);
+			}
 		}
 	}
 

@@ -10,7 +10,8 @@ namespace Carnival::Network::WireFormat {
 	enum RecordType : uint8_t {
 		ENTITY_DATA = 0,
 		COMPONENT_DATA,
-		ARCHETYPE_INFO,
+		ARCHETYPE_DATA,
+		ARCHETYPE_SCHEMA,
 		SCHEMA,
 
 		SYSTEM_EVENT,
