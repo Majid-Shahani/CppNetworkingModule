@@ -48,7 +48,7 @@ namespace Carnival::ECS {
 	void World::replicateUnreliable(uint32_t shardIndex)
 	{
 		auto& currShard = m_Shards[shardIndex];
-		auto idx = m_UnreliableIndex.load(std::memory_order::acquire);
+		auto idx = m_UnreliableIndex.load(std::memory_order::acquire).writerIndex;
 
 		for (auto& [id, rec] : m_Archetypes) {
 			if (rec.flags == NetworkFlags::ON_TICK) {
@@ -89,6 +89,7 @@ namespace Carnival::ECS {
 			idx.writerActive = true;
 		} while (!m_UnreliableIndex.compare_exchange_strong(expected, idx, std::memory_order::release, std::memory_order::relaxed));
 
+		// Replicate Records
 		for (int i{}; i < m_Shards.size(); i++) {
 			replicateRecords(i);
 			replicateUnreliable(i);

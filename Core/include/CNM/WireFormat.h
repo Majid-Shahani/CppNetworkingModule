@@ -29,24 +29,25 @@ namespace Carnival::Network::WireFormat {
 		std::vector<std::byte> componentData;
 		// Possible Owner peerID
 	};
-	struct ComponentData {
+	struct ArchetypeData {
 		uint64_t archetypeID{};
-		uint64_t componentID{};
-		uint32_t count{};
+		uint32_t entity_count{};
+		// Component Data
 		// Array of Components, component Serializer / deserializer will handle
 	};
-	struct ArchetypeInfo {
+	struct ArchetypeSchema {
 		uint64_t archetypeID{};
-		uint32_t componentCount{};
+		uint16_t componentCount{};
+		std::vector<uint64_t> compIDs;
 		// array of uint64_t componentID written manually
 		// bit-packed flags for networked or not flags, starting from LSB
 		// maybe an entity count depending on status and ownership
-		// relevant EntityData (just net ID) per entity if sent. 
+		// relevant EntityData (just net ID) per entity if sent.
 	};
 	struct SCHEMA_SNAPSHOT {
 		uint64_t archetypeCount{};
 		// for each archetype:
-		ArchetypeInfo archInfo{};
-		ComponentData components{}; 
+		//ArchetypeInfo archInfo{};
+		//ComponentData components{}; 
 	};
 }

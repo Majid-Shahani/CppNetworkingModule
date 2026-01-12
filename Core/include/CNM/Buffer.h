@@ -11,6 +11,7 @@ static inline void SpinPause() {}
 #endif
 
 #include <CNM/macros.h>
+#include <CNM/WireFormat.h>
 
 #include <new>
 #include <atomic>
@@ -56,6 +57,7 @@ namespace Carnival {
 			}
 			return *this;
 		}
+
 		// ========================================== MESSAGE WRITE ======================================= //
 		
 		// Returns Address, call markReady once message has been written
@@ -71,6 +73,38 @@ namespace Carnival {
 		}
 		void endMessage() noexcept { m_MessageInFlight = false; }
 		
+		// Write WireFormat
+		inline void putRecordType(Network::WireFormat::RecordType type) {
+			auto addr = startMessage(1);
+			if (addr) {
+				std::memcpy(addr, &type, 1);
+				endMessage();
+			}
+		}
+		inline void putArchetypeSchema(uint64_t archID, uint16_t compCount, std::span<const uint64_t> compIDs) {
+			auto addr = startMessage(10 + compIDs.size());
+			if (!addr) return;
+
+			std::memcpy(addr, &archID, 8);
+			addr += 8;
+			std::memcpy(addr, &compCount, 2);
+			addr += 2;
+			for (auto id : compIDs) {
+				std::memcpy(addr, &id, 8);
+				addr += 8;
+			}
+			endMessage();
+		}
+		inline void putArchetypeData(uint64_t archID, uint16_t entityCount) {
+			auto addr = startMessage(10);
+			if (!addr) return;
+
+			std::memcpy(addr, &archID, 8);
+			addr += 8;
+			std::memcpy(addr, &entityCount, 2);
+			addr += 2;
+			endMessage();
+		}
 		// ========================================== MESSAGE READ ======================================= //
 		std::span<const std::byte> getReadyMessages() { return { m_Data, m_Data + m_Size }; }
 
