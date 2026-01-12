@@ -395,8 +395,9 @@ namespace Carnival::ECS {
 		void freeNetID(uint32_t netID) { m_IDGen.destroyID(netID); }
 
 		void markDirty(Entity e) {
-			auto entry{ m_EntityManager.get(e) };
+			auto& entry{ m_EntityManager.get(e) };
 			auto arr{ static_cast<OnUpdateNetworkComponent*>(entry.pArchetype->getComponentData(OnUpdateNetworkComponent::ID)) };
+			arr[entry.index].version++;
 			if (arr[entry.index].dirty == true) return;
 			arr[entry.index].dirty = true;
 			m_ReplicationBuffer.push(e);

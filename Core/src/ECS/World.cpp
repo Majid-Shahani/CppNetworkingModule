@@ -34,6 +34,13 @@ namespace Carnival::ECS {
 			uint64_t NetID = comp->networkID;
 			
 			auto& snapshot = currShard.entityTable[NetID];
+
+			if (snapshot.version >= comp->version) {
+				// version mismatch, deal with it
+				comp->dirty = false;
+				return;
+			}
+
 			snapshot.version++;
 			snapshot.size = currShard.reliableStagingBuffer.size();
 
