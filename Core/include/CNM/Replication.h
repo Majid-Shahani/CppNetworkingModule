@@ -16,25 +16,24 @@ namespace Carnival {
 	};
 
 	struct EntitySnapshot {
+		~EntitySnapshot() {
+			if (pSerializedData) delete[] pSerializedData;
+		}
+
 		uint64_t version{};
 		uint64_t size{};
 		void* pSerializedData{ nullptr };
 	};
 
 	struct ReplicationContext {
-		ReplicationContext() = default;
-		ReplicationContext(ReplicationContext&&) = default;
+		static_assert(std::atomic<BufferIndex>::is_always_lock_free, "Buffer index is not lock-free");
 
-		~ReplicationContext() {
-			for (auto& [netID, snapshot] : entityTable) {
-				if (snapshot.pSerializedData) delete[] snapshot.pSerializedData;
-			}
-		}
 		// Reliable Data
 		// TODO: Event Log
 		std::map<uint64_t, EntitySnapshot> entityTable{}; // not Thread Safe
 		MessageBuffer reliableStagingBuffer{ 256 };
 		// Unreliable Data
+		std::unique_ptr<std::atomic<BufferIndex>> unreliableIndex{ std::make_unique<std::atomic<BufferIndex>>() };
 		std::array<MessageBuffer, 2> sendBuffers{};
 		std::array<MessageBuffer, 2> receiveBuffers{};
 	};

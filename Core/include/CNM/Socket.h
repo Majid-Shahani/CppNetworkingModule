@@ -6,6 +6,7 @@ namespace Carnival::Network {
 
 	class Socket {
 	public:
+		Socket() noexcept;
 		Socket(const SocketData& initData) noexcept;
 		~Socket() noexcept;
 
@@ -16,28 +17,29 @@ namespace Carnival::Network {
 		Socket& operator=(Socket&& other) noexcept;
 
 		void openSocket();
-		bool closeSocket();
+		bool closeSocket() noexcept;
 
 		// SocketData port (if 0) is overwritten after call to bindSocket
 		bool bindSocket();
 		bool sendPackets(const char* packetData, const int packetSize, const ipv4_addr outAddr, uint16_t port = 0) const;
-		bool receivePackets() const; // TODO: should return bytes
+		bool receivePackets() const noexcept; // TODO: should return bytes
 
 		// Status Checking
-		bool isOpen() const			{ return (m_Status & SocketStatus::OPEN); }
-		bool isBound() const		{ return (m_Status & SocketStatus::BOUND); }
-		bool isError() const		{ return (m_Status & SocketStatus::SOCKERROR); }
-		bool isNonBlocking() const	{ return (m_Status & SocketStatus::NONBLOCKING); }
+		bool isOpen() const	noexcept		{ return (m_Status & SocketStatus::OPEN); }
+		bool isBound() const noexcept		{ return (m_Status & SocketStatus::BOUND); }
+		bool isError() const noexcept		{ return (m_Status & SocketStatus::SOCKERROR); }
+		bool isNonBlocking() const noexcept	{ return (m_Status & SocketStatus::NONBLOCKING); }
 
 		// Set Address & Port, calls to these will cause a reset to the socket if bound
 		void setInAddress(const ipv4_addr inAddr);
 		void setPort(const uint16_t port);
+		void setNonBlocking(bool nb = true);
 
-		uint16_t getPort() const {
+		uint16_t getPort() const noexcept {
 			if (isBound()) return m_Port; 
 			else return 0; 
 		}
-		ipv4_addr getAddr() const {
+		ipv4_addr getAddr() const noexcept {
 			if (isBound()) return m_InAddress;
 			else return ipv4_addr{}; 
 		}

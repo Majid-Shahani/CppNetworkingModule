@@ -13,6 +13,13 @@ namespace {
 }
 
 namespace Carnival::Network {
+	Socket::Socket() noexcept {
+		if (socketRefCount++ == 0) {
+			if (WSAStartup(winsockVersion, &wsaData) != 0) std::terminate();
+			winsockState = WSAState::INITIALIZED;
+		}
+	}
+
 	Socket::Socket(const SocketData& initData) noexcept
 	{
 		if (socketRefCount++ == 0) {
@@ -54,7 +61,7 @@ namespace Carnival::Network {
 	Socket& Socket::operator=(Socket&& other) noexcept
 	{
 		if (this != &other) {
-			closeSocket();
+			if(isOpen()) closeSocket();
 			m_Handle = other.m_Handle;
 			m_InAddress = other.m_InAddress;
 			m_Port = other.m_Port;
@@ -97,7 +104,7 @@ namespace Carnival::Network {
 			}
 		}
 	}
-	bool Socket::closeSocket()
+	bool Socket::closeSocket() noexcept
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isOpen(), "Socket must be open before closing.");
@@ -141,7 +148,10 @@ namespace Carnival::Network {
 
 		return true;
 	}
-	bool Socket::sendPackets(const char* packetData, const int packetSize, const ipv4_addr outAddr, uint16_t port) const
+	bool Socket::sendPackets(const char* packetData, 
+		const int packetSize, 
+		const ipv4_addr outAddr, 
+		uint16_t port) const
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Sending Packets.");
@@ -160,7 +170,7 @@ namespace Carnival::Network {
 		if (sent != packetSize) return false;
 		else return true;
 	}
-	bool Socket::receivePackets() const
+	bool Socket::receivePackets() const noexcept
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Receiving Packets.");
@@ -191,7 +201,16 @@ namespace Carnival::Network {
 			std::cout << packetData << '\n';
 		}
 	}
+	void Socket::setNonBlocking(bool nb) {
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
+		m_Status = static_cast<SocketStatus>(m_Status | SocketStatus::NONBLOCKING);
 
+		if (isBound() && m_Handle != INVALID_SOCKET) {
+			closeSocket();
+			openSocket();
+			bindSocket();
+		}
+	}
 	void Socket::setInAddress(ipv4_addr inAddr)
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");

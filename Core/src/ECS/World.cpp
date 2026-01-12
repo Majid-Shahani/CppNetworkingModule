@@ -21,27 +21,35 @@ namespace Carnival::ECS {
 		return e;
 	}
 
-	void World::updateReliable(uint32_t shardIndex)
+	void World::updateReliable()
 	{
-		auto& currShard = m_Shards[shardIndex];
 		Entity eID{};
 		while (m_ReplicationBuffer.pop(eID)) {
-			auto rec = m_EntityManager.get(eID);
+			// Resolve Entity -> Shards
+			uint16_t shardIndex = 0;
+
+			auto& currShard = m_Shards[shardIndex];
+
+			const auto rec = m_EntityManager.get(eID);
+
+			currShard.reliableStagingBuffer.reset();
 			rec.pArchetype->serializeIndex(rec.index, currShard.reliableStagingBuffer);
 
-			auto pData = rec.pArchetype->getComponentData(OnUpdateNetworkComponent::ID);
-			auto comp = (static_cast<OnUpdateNetworkComponent*>(pData) + rec.index);
-			uint64_t NetID = comp->networkID;
+			auto pData = static_cast<OnUpdateNetworkComponent*>
+				(rec.pArchetype->getComponentData(OnUpdateNetworkComponent::ID));
+			auto& comp = pData[rec.index];
+
+			uint64_t NetID = comp.networkID;
 			
 			auto& snapshot = currShard.entityTable[NetID];
 
-			if (snapshot.version >= comp->version) {
+			if (snapshot.version >= comp.version) {
 				// version mismatch, deal with it
-				comp->dirty = false;
+				comp.dirty = false;
 				return;
 			}
 
-			snapshot.version++;
+			snapshot.version = comp.version;
 			snapshot.size = currShard.reliableStagingBuffer.size();
 
 			if (snapshot.pSerializedData) delete[] snapshot.pSerializedData;
@@ -49,13 +57,13 @@ namespace Carnival::ECS {
 			auto toBeCopied = currShard.reliableStagingBuffer.getReadyMessages();
 			std::memcpy(snapshot.pSerializedData, toBeCopied.data(), toBeCopied.size());
 
-			comp->dirty = false;
+			comp.dirty = false;
 		}
 	}
-	void World::replicateUnreliable(uint32_t shardIndex)
+	void World::replicateUnreliable(uint16_t shardIndex)
 	{
 		auto& currShard = m_Shards[shardIndex];
-		auto idx = m_UnreliableIndex.load(std::memory_order::acquire).writerIndex;
+		auto idx = currShard.unreliableIndex->load(std::memory_order::acquire).writerIndex;
 		auto& msgBuffer = currShard.sendBuffers[idx];
 		msgBuffer.reset();
 
@@ -91,31 +99,32 @@ namespace Carnival::ECS {
 			return pair.second.arch->getEntityCount() == 0;
 			});
 		m_Phase.store(WorldPhase::STABLE, std::memory_order::release);
+		
+		updateReliable();
 
-		// Set Replication Active
-		auto expected = m_UnreliableIndex.load(std::memory_order::relaxed);
+		// Temporary 1 shard solution:
+		auto& u_idx = m_Shards[0].unreliableIndex;
+
+		// Set Replication Write Active
+		auto expected = u_idx->load(std::memory_order::relaxed);
 		BufferIndex idx{};
 		do {
 			idx = expected;
 			idx.writerActive = true;
-		} while (!m_UnreliableIndex.compare_exchange_strong(expected, idx, std::memory_order::release, std::memory_order::relaxed));
+		} while (!u_idx->compare_exchange_strong(expected, idx, std::memory_order::release, std::memory_order::relaxed));
 
 		// Replicate Records
-		for (int i{}; i < m_Shards.size(); i++) {
-			updateReliable(i);
-			replicateUnreliable(i);
-		}
+		replicateUnreliable(0);
 
 		// Swap Buffers, Set Replication Inactive
 		do {
-			expected = m_UnreliableIndex.load(std::memory_order::relaxed);
+			expected = u_idx->load(std::memory_order::relaxed);
 			idx = expected;
 			if (!idx.readerActive) {
 				idx.writerIndex ^= 1;
 				idx.readerIndex ^= 1;
 			}
 			idx.writerActive = false;
-		} while (!m_UnreliableIndex.compare_exchange_strong(expected, idx, std::memory_order::release, std::memory_order::relaxed));
-
+		} while (!u_idx->compare_exchange_strong(expected, idx, std::memory_order::release, std::memory_order::relaxed));
 	}
 }

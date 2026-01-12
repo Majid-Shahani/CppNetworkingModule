@@ -244,17 +244,13 @@ namespace Carnival::ECS {
 		}
 	}
 	void Archetype::serializeIndex(uint32_t idx, MessageBuffer& staging) const  {
-		staging.reset();
 		for (auto& c : m_Components) {
 			c.metadata.serializeFn(static_cast<uint8_t*>(c.pComponentData) + (idx * c.metadata.sizeOfComponent), staging, 1);
 		}
 	}
 	void Archetype::serializeArchetype(MessageBuffer& buff) const {
 		for (auto& c : m_Components) {
-			if ((c.metadata.componentTypeID != OnTickNetworkComponent::ID)
-				&& c.metadata.componentTypeID != OnUpdateNetworkComponent::ID) {
-				c.metadata.serializeFn(c.pComponentData, buff, m_EntityCount);
-			}
+			c.metadata.serializeFn(c.pComponentData, buff, m_EntityCount);
 		}
 	}
 

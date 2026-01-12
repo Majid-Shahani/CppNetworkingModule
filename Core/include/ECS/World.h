@@ -12,7 +12,6 @@
 
 #include <CNM/Buffer.h>
 #include <CNM/Replication.h>
-#include <CNM/NetworkManager.h>
 
 namespace Carnival::ECS {
 
@@ -286,12 +285,8 @@ namespace Carnival::ECS {
 			MAINTENANCE,
 			STABLE,
 		};
-	public:
-		World() {
-			static_assert(std::atomic<BufferIndex>::is_always_lock_free, "Struct is not lock Free!");
-			m_Shards.emplace_back();
-		}
 
+	public:
 		template <ECSComponent... Ts>
 		Entity createEntity() {
 			std::vector<uint64_t> IDs;
@@ -388,6 +383,9 @@ namespace Carnival::ECS {
 
 		void startUpdate();
 		void endUpdate();
+
+		// Do not store
+		ReplicationContext& getShardContext(uint16_t PeerID) { return m_Shards[0]; } // temp
 	private:
 		Entity createEntity(std::vector<uint64_t> components, NetworkFlags flag = NetworkFlags::LOCAL);
 
@@ -419,17 +417,16 @@ namespace Carnival::ECS {
 			return false;
 		}
 
-		void updateReliable(uint32_t shardIndex);
-		void replicateUnreliable(uint32_t shardIndex);
+		void updateReliable();
+		void replicateUnreliable(uint16_t shardIndex);
 	private:
-		ReplicationBuffer<1024> m_ReplicationBuffer; // needs to be per-shard
+		ReplicationBuffer<1024> m_ReplicationBuffer;
 		EntityManager m_EntityManager;
 		NetIDGenerator m_IDGen;
 		ComponentRegistry m_Registry;
-		std::vector<ReplicationContext> m_Shards{};
+		std::vector<ReplicationContext> m_Shards{1};
 		std::map<uint64_t, ArchetypeRecord> m_Archetypes;
 		std::atomic<WorldPhase> m_Phase{ WorldPhase::MAINTENANCE };
-		std::atomic<BufferIndex> m_UnreliableIndex;
 	};
 
 }

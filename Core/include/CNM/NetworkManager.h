@@ -1,11 +1,16 @@
 #pragma once
-// STL
+// STD
 #include <string_view>
 #include <array>
 // CNM
 #include <CNM/CNMtypes.h>
 #include <CNM/utils.h>
 #include <CNM/Socket.h>
+#include <CNM/Replication.h>
+
+namespace Carnival::ECS {
+	class World;
+}
 
 namespace Carnival::Network {
 	constexpr uint32_t HEADER_VERSION = utils::fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
@@ -14,8 +19,8 @@ namespace Carnival::Network {
 
 	class NetworkManager {
 	public:
-		NetworkManager();
-		~NetworkManager();
+		NetworkManager(ECS::World* pWorld, const SocketData& sockData);
+		~NetworkManager() = default;
 
 		NetworkManager(const NetworkManager&)				= delete;
 		NetworkManager& operator=(const NetworkManager&)	= delete;
@@ -84,8 +89,7 @@ namespace Carnival::Network {
 
 	private:
 		std::array<Socket, SOCKET_COUNT> m_Socks; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
-		void* pOutBuffer{ nullptr };
-		void* pInBuffer{ nullptr };
+		ECS::World* m_callback;
 		//uint8_t m_TimeOut{10}; // in Seconds.
 	};
 }

@@ -58,15 +58,22 @@ void PositionMoverSystem(World& w, float delta) {
 }
 
 int main() {
-	// ========================================= INIT NETWORK ======================================= //
-	
 	// =========================================== INIT ECS ========================================= //
-	World w{};
-	w.registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
-	Entity onTickEntity = w.createEntity<Position, OnTickNetworkComponent>();
-	Entity onUpdateEntity = w.createEntity<Position, OnUpdateNetworkComponent>();
-	w.removeComponentsFromEntity<OnUpdateNetworkComponent>(onUpdateEntity);
-	w.addComponentsToEntity<OnUpdateNetworkComponent>(onUpdateEntity);
+	std::unique_ptr<World> w{ std::make_unique<World>() };
+	w->registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
+	Entity onTickEntity = w->createEntity<Position, OnTickNetworkComponent>();
+	Entity onUpdateEntity = w->createEntity<Position, OnUpdateNetworkComponent>();
+	w->removeComponentsFromEntity<OnUpdateNetworkComponent>(onUpdateEntity);
+	w->addComponentsToEntity<OnUpdateNetworkComponent>(onUpdateEntity);
+
+	// ========================================= INIT NETWORK ======================================= //
+	SocketData sock{
+		.InAddress = 127 << 24 | 1,
+		.InPort = 0,
+		.status = SocketStatus::NONBLOCKING,
+	};
+	NetworkManager netMan{ w.get(), sock };
+
 	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests
@@ -76,10 +83,10 @@ int main() {
 	// Send Schema
 
 	// =========================================== Main Loop ========================================= //
-	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked 
-	w.startUpdate();
-	PositionMoverSystem(w, 1);
-	w.endUpdate();
+	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked
+	w->startUpdate();
+	PositionMoverSystem(*w, 1);
+	w->endUpdate();
 	// ============================================ CLEANUP =========================================== //
 	/*
 	* client code :
