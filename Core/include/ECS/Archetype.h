@@ -36,8 +36,9 @@ namespace Carnival::ECS {
 		std::pair<uint32_t, uint32_t>	removeEntityAt(uint32_t index) noexcept;
 		std::pair<uint32_t, uint32_t>	removeLastEntity() noexcept;
 		
-		void							serializeEntity(Entity e, MessageBuffer& staging);
-		void							serializeIndex(uint32_t index, MessageBuffer& staging);
+		void							serializeEntity(Entity e, MessageBuffer& staging) const;
+		void							serializeIndex(uint32_t index, MessageBuffer& staging) const;
+		void							serializeArchetype(MessageBuffer& buff) const;
 
 		inline uint32_t					getEntityCount() const noexcept { return m_EntityCount; }
 		inline Entity					getEntity(uint32_t index) const noexcept { return m_Entities[index]; }

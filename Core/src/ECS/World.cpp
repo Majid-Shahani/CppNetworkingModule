@@ -49,10 +49,13 @@ namespace Carnival::ECS {
 	{
 		auto& currShard = m_Shards[shardIndex];
 		auto idx = m_UnreliableIndex.load(std::memory_order::acquire).writerIndex;
+		auto& msgBuffer = currShard.sendBuffers[idx];
+		msgBuffer.reset();
 
 		for (auto& [id, rec] : m_Archetypes) {
 			if (rec.flags == NetworkFlags::ON_TICK) {
-
+				msgBuffer.putArchetypeData(id, rec.arch->getEntityCount());
+				rec.arch->serializeArchetype(msgBuffer);
 			}
 		}
 	}

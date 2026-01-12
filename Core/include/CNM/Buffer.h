@@ -82,7 +82,7 @@ namespace Carnival {
 			}
 		}
 		inline void putArchetypeSchema(uint64_t archID, uint16_t compCount, std::span<const uint64_t> compIDs) {
-			auto addr = startMessage(10 + compIDs.size());
+			auto addr = startMessage(static_cast<uint32_t>(10 + (compIDs.size() * 8)));
 			if (!addr) return;
 
 			std::memcpy(addr, &archID, 8);
