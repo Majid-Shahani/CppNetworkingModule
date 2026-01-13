@@ -72,7 +72,7 @@ int main() {
 		.InPort = 0,
 		.status = SocketStatus::NONBLOCKING,
 	};
-	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(), sock) };
+	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(), sock, 64) };
 	netMan->pollIO();
 	// ============================================ NETWORK =========================================== //
 

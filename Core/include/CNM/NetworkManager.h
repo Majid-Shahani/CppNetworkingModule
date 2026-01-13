@@ -16,7 +16,7 @@ namespace Carnival::ECS {
 namespace Carnival::Network {
 	class NetworkManager {
 	public:
-		NetworkManager(ECS::World* pWorld, const SocketData& sockData);
+		NetworkManager(ECS::World* pWorld, const SocketData& sockData, uint16_t maxSessions);
 		~NetworkManager() = default;
 
 		NetworkManager(const NetworkManager&)				= delete;
@@ -41,10 +41,10 @@ namespace Carnival::Network {
 			uint32_t seq = 0, uint32_t ackf = 0,
 			uint32_t lastReceiv = 0, FragmentLoad frag = {});
 
-		void handlePacket();
-		void handleConnection();
-		void handlePayload();
-		void createSession();
+		bool handlePacket(PacketInfo);
+		void handleConnection(PacketInfo);
+		void handlePayload(PacketInfo);
+		void createSession(PacketInfo);
 	private:
 		NetworkStats m_Stats{};
 
@@ -55,6 +55,7 @@ namespace Carnival::Network {
 		std::vector<PendingPeer> m_PendingConnections;
 		std::map<uint32_t, Session> m_Sessions;
 
+		uint16_t m_MaxSessions{ 1 };
 		ReliabilityPolicy m_Policy{};
 	};
 }

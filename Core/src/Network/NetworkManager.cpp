@@ -4,8 +4,8 @@
 #include <ECS/World.h>
 
 namespace Carnival::Network {
-	NetworkManager::NetworkManager(ECS::World* pWorld, const SocketData& sockData)
-		: m_callback{ pWorld }
+	NetworkManager::NetworkManager(ECS::World* pWorld, const SocketData& sockData, uint16_t maxSessions)
+		: m_callback{ pWorld }, m_MaxSessions{ maxSessions }
 	{
 		for (auto& sock : m_Socks) {
 			sock.setInAddress(sockData.InAddress);
@@ -42,6 +42,19 @@ namespace Carnival::Network {
 	}
 	void NetworkManager::pollIncoming()
 	{
+		for (auto& sock : m_Socks) {
+			m_PacketBuffer.clear();
+			if (!sock.hasPacket()) continue;
+			
+			PacketInfo info = sock.receivePacket(m_PacketBuffer);
+			m_Stats.bytesReceived += m_PacketBuffer.size();
+			m_Stats.packetsReceived++;
+
+			if (!handlePacket(info)) {
+				m_Stats.packetsDropped++;
+				continue;
+			}
+		}
 	}
 	void NetworkManager::pollOutgoing()
 	{
@@ -60,7 +73,11 @@ namespace Carnival::Network {
 		// Need to use a command buffer and return a promise.
 		// sockets cannot be used concurrently.
 		auto res = m_Socks[1].sendPackets(m_PacketBuffer, addr, port);
-		if (res) m_PendingConnections.emplace_back(addr, getTime(), port, 1);
+		if (res) {
+			m_Stats.bytesSent += m_PacketBuffer.size();
+			m_Stats.packetsSent++;
+			m_PendingConnections.emplace_back(addr, getTime(), port, 1);
+		}
 		return res;
 	}
 
@@ -76,7 +93,8 @@ namespace Carnival::Network {
 		append(HEADER_VERSION);
 		append(flags);
 
-		auto type = flags & (PacketFlags::UNRELIABLE - 1);
+		constexpr uint8_t TYPE_MASK = 0b00000111;
+		auto type = static_cast<PacketFlags>(flags & TYPE_MASK);
 		if (type == PacketFlags::CONNECTION_REQUEST || 
 			type == PacketFlags::CONNECTION_REJECT ||
 			type == PacketFlags::CONNECTION_ACCEPT ||
@@ -90,21 +108,58 @@ namespace Carnival::Network {
 		return;
 	}
 
-	void NetworkManager::handlePacket()
+	bool NetworkManager::handlePacket(PacketInfo info)
 	{
 		// Check header version.
+		int cursor = 0;
+		uint32_t packetPV{};
+		std::memcpy(&packetPV, m_PacketBuffer.data(), sizeof(packetPV));
+		cursor += sizeof(packetPV);
+
+		if (packetPV != HEADER_VERSION)	return false;
+		
 		// switch on flag
+		PacketFlags flags{};
+		std::memcpy(&flags, m_PacketBuffer.data() + cursor, sizeof(flags));
+		cursor += sizeof(flags);
+
+		// maximum one channel
+		constexpr int CHANNEL_MASK = PacketFlags::UNRELIABLE | PacketFlags::RELIABLE | PacketFlags::SNAPSHOT;
+		auto channels = flags & CHANNEL_MASK;
+		if ((channels & (channels - 1)) != 0 || channels == 0) return false;
+
+		switch ((flags & (PacketFlags::UNRELIABLE - 1))) {
+		case PacketFlags::INVALID:
+			return false;
+			break;
+		case PacketFlags::CONNECTION_REQUEST:
+		case PacketFlags::CONNECTION_ACCEPT:
+		case PacketFlags::CONNECTION_REJECT:
+			if (!(flags & PacketFlags::RELIABLE) || flags & PacketFlags::FRAGMENT) return false;
+			handleConnection(info);
+			break;
+		default:
+			return false;
+		}
+
+		return true;
 	}
 
-	void NetworkManager::handleConnection()
+	void NetworkManager::handleConnection(PacketInfo info)
 	{
-		// check max vs curr sessions
 		// check existing sessions
+		for (auto& [id, sesh] : m_Sessions) {
+			if (sesh.endpoint[1].addr == info.fromAddr && sesh.endpoint[1].port == info.fromPort) {
+
+			}
+		}
+
 		// check pending connections
+		// check max vs curr sessions
 		// create new connect (decide policy later)
 	}
 
-	void NetworkManager::handlePayload()
+	void NetworkManager::handlePayload(PacketInfo info)
 	{
 	}
 

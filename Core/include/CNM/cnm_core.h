@@ -51,8 +51,7 @@ namespace Carnival::Network {
 		CONNECTION_REJECT	= 4,
 		PAYLOAD				= 5,
 		ACKNOWLEDGEMENT		= 6,
-		// BIT FLAGS
-		  // CHANNEL ID
+		// CHANNEL ID
 		UNRELIABLE	= 1 << 3,
 		RELIABLE	= 1 << 4,
 		SNAPSHOT	= 1 << 5,
