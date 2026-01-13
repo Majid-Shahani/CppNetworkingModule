@@ -72,8 +72,8 @@ int main() {
 		.InPort = 0,
 		.status = SocketStatus::NONBLOCKING,
 	};
-	NetworkManager netMan{ w.get(), sock };
-	netMan.pollIO();
+	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(), sock) };
+	netMan->pollIO();
 	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests

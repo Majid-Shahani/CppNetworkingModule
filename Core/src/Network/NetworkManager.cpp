@@ -46,8 +46,41 @@ namespace Carnival::Network {
 	}
 	bool NetworkManager::attemptConnect(ipv4_addr addr, uint16_t port)
 	{
+		Endpoint pending{
+			.addr = addr,
+			.port = port,
+			.state = ConnectionState::CONNECTING,
+		};
+		
+		m_PacketBuffer.clear();
+		writeHeader(PacketFlags::CONNECTION);
+
 		return false;
 	}
+
+	void NetworkManager::writeHeader(PacketFlags flags,
+		uint32_t sessionID, uint32_t seq,
+		uint32_t ackf, uint32_t lastReceiv, FragmentLoad frag)
+	{
+		auto append = [&](const auto& val) {
+			const std::byte* p = reinterpret_cast<const std::byte*>(&val);
+			m_PacketBuffer.insert(m_PacketBuffer.end(), p, p + sizeof(val));
+		};
+
+		append(HEADER_VERSION);
+		append(flags);
+
+		auto type = flags & 3;
+		if (type == PacketFlags::CONNECTION || type == PacketFlags::HEARTBEAT) return;
+
+		append(seq);
+		append(ackf);
+		append(lastReceiv);
+		append(sessionID);
+		if ((flags & PacketFlags::FRAGMENT) != 0)	append(frag);
+		return;
+	}
+
 	void NetworkManager::sendReliableData()
 	{
 	}
@@ -57,10 +90,5 @@ namespace Carnival::Network {
 	void NetworkManager::sendSnapshot()
 	{
 	}
-	void NetworkManager::addPeer(uint16_t peerID)
-	{
-	}
-	void NetworkManager::removePeer(uint16_t peerID)
-	{
-	}
+
 }

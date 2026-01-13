@@ -5,9 +5,9 @@
 
 namespace Carnival::Network {
 
-	constexpr uint32_t		HEADER_VERSION	= utils::fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
-	static constexpr size_t CHANNELS		= 3;
-	static constexpr size_t SOCKET_COUNT	= CHANNELS - 1;
+	static constexpr uint32_t	HEADER_VERSION	= utils::fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
+	static constexpr uint8_t	CHANNELS		= 3;
+	static constexpr uint8_t	SOCKET_COUNT	= CHANNELS - 1;
 
 	// Address will be set in host byte order after call to bind / send
 	enum SocketStatus : uint8_t {
@@ -44,10 +44,10 @@ namespace Carnival::Network {
 	//===================================== PACKET HEADER ================================//
 	enum PacketFlags : uint8_t {
 		// EXCLUSIVE TYPE
-		PAYLOAD		= 0,
+		INVALID		= 0,
 		HEARTBEAT	= 1,
 		CONNECTION	= 2,
-		RESERVED	= 3,
+		PAYLOAD		= 3,
 		// BIT FLAGS
 		  // CHANNEL ID
 		UNRELIABLE	= 1 << 2,
@@ -61,41 +61,34 @@ namespace Carnival::Network {
 		uint16_t FRAGMENT_COUNT{};
 		uint16_t fragmentIndex{};
 	};
-	struct PeerHeader {
-		uint32_t sessionID{};
-		uint16_t peerID{};
-	};
+	// Wire Format
 	struct PacketHeader {
 		uint32_t		PROTOCOL_VERSION{ HEADER_VERSION };
-
-		uint32_t		SequenceNumber{}; // Sequence of this packet being sent.
-		uint32_t		ACKField{}; // Last 32 packets received
-		uint32_t		LastSeqReceived{};
-
 		PacketFlags		Flags{ PacketFlags::HEARTBEAT | PacketFlags::UNRELIABLE};
-		uint8_t			padding[3];
-		// if flags & Connection != 1, peerID, sessionID
-		// If Fragmented: FragmentLoad	fragmentData{};
-	};
-	//======================================== Peer =============================//
-	struct ChannelState {
-		uint32_t	receivedACKField{};
-		uint32_t	lastSent{};
-		uint32_t	lastReceived{};
-		uint16_t	batchNumber{};
-		uint16_t	FRAGMENT_COUNT{};
+		
+		// If flags != Connection / Heartbeat
+		uint32_t	SequenceNumber{}; // Sequence of this packet being sent.
+		uint32_t	ACKField{}; // Last 32 packets received
+		uint32_t	LastSeqReceived{};
+		uint32_t	sessionID{};
+		// If Fragmented: 
+		FragmentLoad fragmentData{};
 	};
 
-	struct Peer {
-		std::array<ChannelState, CHANNELS> states; // 0 - Unreliable, 1 - Reliable Unordered, 2 - Snapshot
-		uint32_t	sessionID{};
-		uint32_t	lastSeenTime{};
-		ipv4_addr	addr{};
-		uint16_t	port{};
-		uint16_t	peerID{};
+	// Local Format
+	struct HeaderInfo {
+		uint32_t protocol{};
+		uint32_t seqNum{};
+		uint32_t ackField{};
+		uint32_t lastSeqRecv{};
+		uint32_t sessionID{};
+		FragmentLoad fragLoad{};
+		PacketFlags flags{ INVALID };
+		uint8_t offset{};
 	};
 
 	//======================================== Connection ================================//
+
 	enum class ConnectionState : uint8_t {
 		DISCONNECTED,
 		CONNECTING,
@@ -105,14 +98,36 @@ namespace Carnival::Network {
 	struct PendingPeer {
 		ipv4_addr	addr{};
 		uint16_t	port{};
+		uint16_t	retryCount{};
 	};
 	struct ReliabilityPolicy { // time in MS
 		uint16_t resendDelay	= 350;
 		uint16_t maxResendDelay = 3500;
 		uint16_t disconnect		= 5500;
 		uint16_t heartbeat		= 2350; // Time since last send
-		uint16_t maxRetries		= UINT16_MAX;
+		uint16_t maxRetries		= 10;
 	};
+	//======================================== Session =============================//
+
+	struct ChannelState {
+		uint32_t	receivedACKField{};
+		uint32_t	lastSent{};
+		uint32_t	lastReceived{};
+		uint16_t	batchNumber{};
+		uint16_t	FRAGMENT_COUNT{};
+	};
+	struct Endpoint {
+		ipv4_addr	addr{};
+		uint32_t	lastRecvTime{};
+		uint32_t	lastSentTime{};
+		uint16_t	port{};
+		ConnectionState state{ ConnectionState::DISCONNECTED };
+	};
+	struct Session {
+		std::array<Endpoint, SOCKET_COUNT>	endpoint;
+		std::array<ChannelState, CHANNELS>	states; // 0 - Unreliable, 1 - Reliable Unordered, 2 - Snapshot
+	};
+
 	//=========================================== DEBUG ===================================//
 	struct NetworkStats {
 		uint64_t packetsSent{};

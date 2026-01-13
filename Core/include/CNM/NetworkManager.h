@@ -36,15 +36,22 @@ namespace Carnival::Network {
 		void sendUnreliableData();
 		void sendSnapshot();
 
-		void addPeer(uint16_t peerID);
-		void removePeer(uint16_t peerID);
-
+		void writeHeader(PacketFlags flags,
+			uint32_t sessionID = 0,
+			uint32_t seq = 0,
+			uint32_t ackf = 0,
+			uint32_t lastReceiv = 0,
+			FragmentLoad frag = {});
 	private:
+		NetworkStats m_Stats{};
+
 		std::array<Socket, SOCKET_COUNT> m_Socks; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
 		std::vector<std::byte> m_PacketBuffer;
 		ECS::World* m_callback;
 
-		NetworkStats m_Stats;
+		std::vector<PendingPeer> m_PendingConnections;
+		std::map<uint32_t, Session> m_Sessions;
+
 		ReliabilityPolicy m_Policy{};
 	};
 }
