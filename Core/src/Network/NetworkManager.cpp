@@ -14,6 +14,7 @@ namespace Carnival::Network {
 			sock.openSocket();
 			sock.bindSocket();
 		}
+		m_PacketBuffer.reserve(1500);
 	}
 	void NetworkManager::pollIO()
 	{

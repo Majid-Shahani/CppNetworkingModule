@@ -148,15 +148,14 @@ namespace Carnival::Network {
 
 		return true;
 	}
-	bool Socket::sendPackets(const char* packetData, 
-		const int packetSize, 
+	bool Socket::sendPackets(std::span<const std::byte> packet,
 		const ipv4_addr outAddr, 
 		uint16_t port) const
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Sending Packets.");
-		CL_CORE_ASSERT(packetSize != 0, "Packet Size is 0");
-		CL_CORE_ASSERT(packetData != nullptr, "Packet Data Poiner is null.");
+		CL_CORE_ASSERT(packet.size() != 0, "Packet Size is 0");
+		//CL_CORE_ASSERT(packet.data() != nullptr, "Packet Data Poiner is null.");
 		
 		if (m_Handle == INVALID_SOCKET) return false;
 
@@ -166,41 +165,35 @@ namespace Carnival::Network {
 		if (port == 0) address.sin_port = htons(m_Port);
 		else address.sin_port = htons(port);
 
-		int sent = sendto(m_Handle, packetData, packetSize, 0, (sockaddr*) &address, sizeof(sockaddr_in));
-		if (sent != packetSize) return false;
+		int sent = sendto(m_Handle, reinterpret_cast<const char*>(packet.data()),
+			static_cast<int>(packet.size()),
+			0, (sockaddr*)&address, sizeof(sockaddr_in));
+		if (sent != packet.size()) return false;
 		else return true;
 	}
-	bool Socket::receivePackets() const noexcept
+
+	bool Socket::hasPacket() const noexcept {
+		WSAPOLLFD pfd{};
+		pfd.fd = m_Handle;
+		pfd.events = POLLRDNORM;
+		int ready = WSAPoll(&pfd, 1, 0);
+		return (ready > 0 && (pfd.revents & POLLRDNORM));
+	}
+	PacketInfo Socket::receivePacket(std::span<std::byte> packet) const noexcept
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Receiving Packets.");
+		CL_CORE_ASSERT(m_Handle != INVALID_SOCKET, "Socket must be open and bound before receiving packets.");
+		
+		thread_local sockaddr_in from{};
+		thread_local int fromLength = sizeof(from);
 
-		if (m_Handle == INVALID_SOCKET) return false;
-
-		while (true)
-		{
-			uint8_t packetData[256] = "";
-			uint32_t maxPacketSize = sizeof(packetData);
-			
-			thread_local sockaddr_in from{};
-			thread_local int fromLength = sizeof(from);
-
-			int64_t bytes = recvfrom(m_Handle, (char*)packetData, 
-				maxPacketSize, 0, (sockaddr*)&from, &fromLength);
-
-			if (bytes <= 0 || bytes == SOCKET_ERROR) {
-				return false;
-			}
-
-			// process
-			/*
-			uint32_t fromAddr = ntohl(from.sin_addr.s_addr);
-			uint16_t fromPort = ntohs(from.sin_port);
-			*/
-			packetData[(bytes >= (sizeof(packetData) - 1) ? sizeof(packetData) - 1 : bytes)] = '\0';
-			std::cout << packetData << '\n';
-		}
+		int64_t bytes = recvfrom(m_Handle, reinterpret_cast<char*>(packet.data()),
+			static_cast<int>(packet.size()), 0, (sockaddr*)&from, &fromLength);
+	
+		return { ntohl(from.sin_addr.s_addr), ntohs(from.sin_port) };
 	}
+
 	void Socket::setNonBlocking(bool nb) {
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		m_Status = static_cast<SocketStatus>(m_Status | SocketStatus::NONBLOCKING);

@@ -2,6 +2,7 @@
 // STD
 #include <string_view>
 #include <array>
+#include <vector>
 // CNM
 #include <CNM/CNMtypes.h>
 #include <CNM/utils.h>
@@ -89,6 +90,7 @@ namespace Carnival::Network {
 
 	private:
 		std::array<Socket, SOCKET_COUNT> m_Socks; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
+		std::vector<std::byte> m_PacketBuffer;
 		ECS::World* m_callback;
 		//uint8_t m_TimeOut{10}; // in Seconds.
 	};

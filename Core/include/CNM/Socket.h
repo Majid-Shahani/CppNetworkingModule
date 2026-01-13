@@ -1,9 +1,16 @@
 #pragma once
+
+#include <vector>
+#include <span>
+
 //CNM
 #include <CNM/CNMtypes.h>
 
 namespace Carnival::Network {
-
+	struct PacketInfo {
+		ipv4_addr fromAddr{};
+		uint16_t fromPort{};
+	};
 	class Socket {
 	public:
 		Socket() noexcept;
@@ -21,8 +28,10 @@ namespace Carnival::Network {
 
 		// SocketData port (if 0) is overwritten after call to bindSocket
 		bool bindSocket();
-		bool sendPackets(const char* packetData, const int packetSize, const ipv4_addr outAddr, uint16_t port = 0) const;
-		bool receivePackets() const noexcept; // TODO: should return bytes
+		bool sendPackets(std::span<const std::byte> packet, const ipv4_addr outAddr, uint16_t port = 0) const;
+
+		bool hasPacket() const noexcept;
+		PacketInfo receivePacket(std::span<std::byte> packet) const noexcept;
 
 		// Status Checking
 		bool isOpen() const	noexcept		{ return (m_Status & SocketStatus::OPEN); }
