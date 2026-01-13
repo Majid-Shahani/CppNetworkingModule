@@ -53,7 +53,7 @@ void PositionMoverSystem(World& w, float delta) {
 	for (auto it = query.begin(); it != query.end(); ++it) {
 		it.write().x = it.read().x + delta;
 
-		std::print("Value: {}\n", it.read().x);
+		//std::print("Value: {}\n", it.read().x);
 	}
 }
 
@@ -73,7 +73,7 @@ int main() {
 		.status = SocketStatus::NONBLOCKING,
 	};
 	NetworkManager netMan{ w.get(), sock };
-
+	netMan.pollIO();
 	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests

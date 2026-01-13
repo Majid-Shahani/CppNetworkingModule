@@ -28,3 +28,13 @@
 #include <netinet/in.h>
 #include <fcntl.h>
 #endif
+
+// CNM
+#include <CNM/utils.h>
+#include <CNM/cnm_core.h>
+#include <CNM/WireFormat.h>
+#include <CNM/Buffer.h>
+#include <CNM/Replication.h>
+
+#include <ECS/ECS.h>
+#include <CNM/Socket.h>

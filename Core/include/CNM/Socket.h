@@ -4,13 +4,9 @@
 #include <span>
 
 //CNM
-#include <CNM/CNMtypes.h>
+#include <CNM/cnm_core.h>
 
 namespace Carnival::Network {
-	struct PacketInfo {
-		ipv4_addr fromAddr{};
-		uint16_t fromPort{};
-	};
 	class Socket {
 	public:
 		Socket() noexcept;
