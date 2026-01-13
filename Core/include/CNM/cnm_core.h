@@ -44,17 +44,20 @@ namespace Carnival::Network {
 	//===================================== PACKET HEADER ================================//
 	enum PacketFlags : uint8_t {
 		// EXCLUSIVE TYPE
-		INVALID		= 0,
-		HEARTBEAT	= 1,
-		CONNECTION	= 2,
-		PAYLOAD		= 3,
+		INVALID				= 0,
+		HEARTBEAT			= 1,
+		CONNECTION_REQUEST	= 2,
+		CONNECTION_ACCEPT	= 3,
+		CONNECTION_REJECT	= 4,
+		PAYLOAD				= 5,
+		ACKNOWLEDGEMENT		= 6,
 		// BIT FLAGS
 		  // CHANNEL ID
-		UNRELIABLE	= 1 << 2,
-		RELIABLE	= 1 << 3,
-		SNAPSHOT	= 1 << 4,
+		UNRELIABLE	= 1 << 3,
+		RELIABLE	= 1 << 4,
+		SNAPSHOT	= 1 << 5,
 		  // FRAGMENT
-		FRAGMENT	= 1 << 5,
+		FRAGMENT	= 1 << 6,
 	};
 	struct FragmentLoad {
 		uint16_t batchNumber{};
@@ -97,6 +100,7 @@ namespace Carnival::Network {
 	};
 	struct PendingPeer {
 		ipv4_addr	addr{};
+		uint32_t	lastSendTime{};
 		uint16_t	port{};
 		uint16_t	retryCount{};
 	};

@@ -34,6 +34,8 @@ namespace Carnival::Network {
 		if (from.fromAddr == m_Socks[0].getAddr() && from.fromPort == m_Socks[0].getPort()) {
 			std::print("Packet from socket 1 Received!\nPacket: {}", reinterpret_cast<const char*>(m_PacketBuffer.data()));
 		}
+
+		attemptConnect(m_Socks[0].getAddr(), m_Socks[1].getPort());
 	}
 	void NetworkManager::pollOngoing()
 	{
@@ -45,17 +47,21 @@ namespace Carnival::Network {
 	{
 	}
 	bool NetworkManager::attemptConnect(ipv4_addr addr, uint16_t port)
-	{
-		Endpoint pending{
-			.addr = addr,
-			.port = port,
-			.state = ConnectionState::CONNECTING,
-		};
-		
-		m_PacketBuffer.clear();
-		writeHeader(PacketFlags::CONNECTION);
+	{	
+		// Prevent duplicate pending attempts
+		for (const auto& p : m_PendingConnections) {
+			if (p.addr == addr && p.port == port)
+				return false;
+		}
 
-		return false;
+		m_PacketBuffer.clear();
+		writeHeader(PacketFlags::CONNECTION_REQUEST);
+		
+		// Need to use a command buffer and return a promise.
+		// sockets cannot be used concurrently.
+		auto res = m_Socks[1].sendPackets(m_PacketBuffer, addr, port);
+		if (res) m_PendingConnections.emplace_back(addr, getTime(), port, 1);
+		return res;
 	}
 
 	void NetworkManager::writeHeader(PacketFlags flags,
@@ -70,8 +76,11 @@ namespace Carnival::Network {
 		append(HEADER_VERSION);
 		append(flags);
 
-		auto type = flags & 3;
-		if (type == PacketFlags::CONNECTION || type == PacketFlags::HEARTBEAT) return;
+		auto type = flags & (PacketFlags::UNRELIABLE - 1);
+		if (type == PacketFlags::CONNECTION_REQUEST || 
+			type == PacketFlags::CONNECTION_REJECT ||
+			type == PacketFlags::CONNECTION_ACCEPT ||
+			type == PacketFlags::HEARTBEAT) return;
 
 		append(seq);
 		append(ackf);
@@ -79,6 +88,30 @@ namespace Carnival::Network {
 		append(sessionID);
 		if ((flags & PacketFlags::FRAGMENT) != 0)	append(frag);
 		return;
+	}
+
+	void NetworkManager::handlePacket()
+	{
+		// Check header version.
+		// switch on flag
+	}
+
+	void NetworkManager::handleConnection()
+	{
+		// check max vs curr sessions
+		// check existing sessions
+		// check pending connections
+		// create new connect (decide policy later)
+	}
+
+	void NetworkManager::handlePayload()
+	{
+	}
+
+	uint32_t NetworkManager::getTime()
+	{
+		static const auto start = std::chrono::steady_clock::now();
+		return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
 	}
 
 	void NetworkManager::sendReliableData()

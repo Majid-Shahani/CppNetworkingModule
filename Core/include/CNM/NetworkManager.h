@@ -32,16 +32,19 @@ namespace Carnival::Network {
 		bool attemptConnect(ipv4_addr addr, uint16_t port);
 
 	private:
+		static uint32_t getTime();
 		void sendReliableData();
 		void sendUnreliableData();
 		void sendSnapshot();
 
-		void writeHeader(PacketFlags flags,
-			uint32_t sessionID = 0,
-			uint32_t seq = 0,
-			uint32_t ackf = 0,
-			uint32_t lastReceiv = 0,
-			FragmentLoad frag = {});
+		void writeHeader(PacketFlags flags,	uint32_t sessionID = 0,
+			uint32_t seq = 0, uint32_t ackf = 0,
+			uint32_t lastReceiv = 0, FragmentLoad frag = {});
+
+		void handlePacket();
+		void handleConnection();
+		void handlePayload();
+		void createSession();
 	private:
 		NetworkStats m_Stats{};
 
