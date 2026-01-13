@@ -3,6 +3,20 @@
 #include <CNM/NetworkManager.h>
 #include <ECS/World.h>
 
+namespace {
+	constexpr uint8_t TYPE_MASK = 0b00000111;
+	constexpr int CHANNEL_MASK = Carnival::Network::PacketFlags::UNRELIABLE | 
+		Carnival::Network::PacketFlags::RELIABLE | 
+		Carnival::Network::PacketFlags::SNAPSHOT;
+
+	uint32_t generateSessionID() {
+		static thread_local std::mt19937 rng{ std::random_device{}()};
+		static thread_local std::uniform_int_distribution<uint32_t> dist{1, UINT32_MAX};
+
+		return dist(rng);
+	}
+}
+
 namespace Carnival::Network {
 	NetworkManager::NetworkManager(ECS::World* pWorld, const SocketData& sockData, uint16_t maxSessions)
 		: m_callback{ pWorld }, m_MaxSessions{ maxSessions }
@@ -43,16 +57,15 @@ namespace Carnival::Network {
 	void NetworkManager::pollIncoming()
 	{
 		for (auto& sock : m_Socks) {
-			m_PacketBuffer.clear();
-			if (!sock.hasPacket()) continue;
-			
-			PacketInfo info = sock.receivePacket(m_PacketBuffer);
-			m_Stats.bytesReceived += m_PacketBuffer.size();
-			m_Stats.packetsReceived++;
+			while (sock.hasPacket()) {
+				m_PacketBuffer.clear();
+				PacketInfo info = sock.receivePacket(m_PacketBuffer);
+				m_Stats.bytesReceived += m_PacketBuffer.size();
+				m_Stats.packetsReceived++;
 
-			if (!handlePacket(info)) {
-				m_Stats.packetsDropped++;
-				continue;
+				// TODO: Check Against Drop List
+
+				if (!handlePacket(info)) m_Stats.packetsDropped++;
 			}
 		}
 	}
@@ -72,13 +85,14 @@ namespace Carnival::Network {
 		
 		// Need to use a command buffer and return a promise.
 		// sockets cannot be used concurrently.
-		auto res = m_Socks[1].sendPackets(m_PacketBuffer, addr, port);
-		if (res) {
+		
+		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, addr, port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
 			m_Stats.packetsSent++;
 			m_PendingConnections.emplace_back(addr, getTime(), port, 1);
+			return true;
 		}
-		return res;
+		return false;
 	}
 
 	void NetworkManager::writeHeader(PacketFlags flags,
@@ -93,8 +107,7 @@ namespace Carnival::Network {
 		append(HEADER_VERSION);
 		append(flags);
 
-		constexpr uint8_t TYPE_MASK = 0b00000111;
-		auto type = static_cast<PacketFlags>(flags & TYPE_MASK);
+		auto type{ static_cast<PacketFlags>(flags & TYPE_MASK) };
 		if (type == PacketFlags::CONNECTION_REQUEST || 
 			type == PacketFlags::CONNECTION_REJECT ||
 			type == PacketFlags::CONNECTION_ACCEPT ||
@@ -111,24 +124,23 @@ namespace Carnival::Network {
 	bool NetworkManager::handlePacket(PacketInfo info)
 	{
 		// Check header version.
-		int cursor = 0;
+		int cursor{};
 		uint32_t packetPV{};
 		std::memcpy(&packetPV, m_PacketBuffer.data(), sizeof(packetPV));
 		cursor += sizeof(packetPV);
 
 		if (packetPV != HEADER_VERSION)	return false;
 		
-		// switch on flag
 		PacketFlags flags{};
 		std::memcpy(&flags, m_PacketBuffer.data() + cursor, sizeof(flags));
 		cursor += sizeof(flags);
 
 		// maximum one channel
-		constexpr int CHANNEL_MASK = PacketFlags::UNRELIABLE | PacketFlags::RELIABLE | PacketFlags::SNAPSHOT;
-		auto channels = flags & CHANNEL_MASK;
+		auto channels{ flags & CHANNEL_MASK };
 		if ((channels & (channels - 1)) != 0 || channels == 0) return false;
 
-		switch ((flags & (PacketFlags::UNRELIABLE - 1))) {
+		// switch on flag
+		switch (flags & TYPE_MASK) {
 		case PacketFlags::INVALID:
 			return false;
 			break;
@@ -148,18 +160,59 @@ namespace Carnival::Network {
 	void NetworkManager::handleConnection(PacketInfo info)
 	{
 		// check existing sessions
-		for (auto& [id, sesh] : m_Sessions) {
+		for (const auto& [id, sesh] : m_Sessions) {
 			if (sesh.endpoint[1].addr == info.fromAddr && sesh.endpoint[1].port == info.fromPort) {
-
+				if (sesh.endpoint[1].state == ConnectionState::DROPPING) {
+					rejectConnection(info.fromAddr, info.fromPort);
+					return;
+				}
+				acceptConnection(id);
+				return;
 			}
 		}
 
-		// check pending connections
 		// check max vs curr sessions
-		// create new connect (decide policy later)
+		if (m_Sessions.size() >= m_MaxSessions) {
+			rejectConnection(info.fromAddr, info.fromPort);
+			return;
+		}
+
+		// check pending connections
+		for (auto it{ m_PendingConnections.begin() }; it != m_PendingConnections.end(); ++it) {
+			if (it->addr == info.fromAddr && it->port == info.fromPort) {
+				uint32_t sessionID{ createSession(*it) };
+				m_PendingConnections.erase(it);
+				acceptConnection(sessionID);
+				return;
+			}
+		}
+
+		// create new connect
+		// for now just accept
+		PendingPeer peer{
+			.addr = info.fromAddr,
+			.lastSendTime = getTime(),
+			.port = info.fromPort,
+			.retryCount = 1,
+		};
+		uint32_t ID{ createSession(peer) };
+		acceptConnection(ID);
 	}
 
 	void NetworkManager::handlePayload(PacketInfo info)
+	{
+	}
+
+	uint32_t NetworkManager::createSession(const PendingPeer& info)
+	{
+		return 0;
+	}
+
+	void NetworkManager::acceptConnection(uint32_t sessionID)
+	{
+	}
+
+	void NetworkManager::rejectConnection(ipv4_addr addr, uint16_t port)
 	{
 	}
 

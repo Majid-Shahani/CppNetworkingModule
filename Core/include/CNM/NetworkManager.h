@@ -30,7 +30,6 @@ namespace Carnival::Network {
 		void pollOutgoing(); // send waiting messages
 
 		bool attemptConnect(ipv4_addr addr, uint16_t port);
-
 	private:
 		static uint32_t getTime();
 		void sendReliableData();
@@ -41,10 +40,13 @@ namespace Carnival::Network {
 			uint32_t seq = 0, uint32_t ackf = 0,
 			uint32_t lastReceiv = 0, FragmentLoad frag = {});
 
-		bool handlePacket(PacketInfo);
-		void handleConnection(PacketInfo);
-		void handlePayload(PacketInfo);
-		void createSession(PacketInfo);
+		bool handlePacket(const PacketInfo);
+		void handleConnection(const PacketInfo);
+		void handlePayload(const PacketInfo);
+		uint32_t createSession(const PendingPeer& info);
+
+		void acceptConnection(uint32_t sessionID);
+		void rejectConnection(ipv4_addr addr, uint16_t port);
 	private:
 		NetworkStats m_Stats{};
 
