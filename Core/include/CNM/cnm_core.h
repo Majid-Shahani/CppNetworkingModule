@@ -6,7 +6,7 @@
 namespace Carnival::Network {
 
 	static constexpr uint32_t	HEADER_VERSION	= utils::fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
-	static constexpr uint8_t	CHANNELS		= 3;
+	static constexpr uint8_t	CHANNELS		= 3; // 0 - Unreliable, 1 - Reliable, 2 - Snapshot
 	static constexpr uint8_t	SOCKET_COUNT	= CHANNELS - 1;
 
 	// Address will be set in host byte order after call to bind / send

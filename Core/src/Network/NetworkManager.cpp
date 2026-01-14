@@ -81,7 +81,11 @@ namespace Carnival::Network {
 		}
 
 		m_PacketBuffer.clear();
-		writeHeader(PacketFlags::CONNECTION_REQUEST);
+		HeaderInfo header{
+			.protocol = HEADER_VERSION,
+			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE),
+		};
+		writeHeader(header);
 		
 		// Need to use a command buffer and return a promise.
 		// sockets cannot be used concurrently.
@@ -95,60 +99,100 @@ namespace Carnival::Network {
 		return false;
 	}
 
-	void NetworkManager::writeHeader(PacketFlags flags,
-		uint32_t sessionID, uint32_t seq,
-		uint32_t ackf, uint32_t lastReceiv, FragmentLoad frag)
+	void NetworkManager::writeHeader(const HeaderInfo& header)
 	{
 		auto append = [&](const auto& val) {
 			const std::byte* p = reinterpret_cast<const std::byte*>(&val);
 			m_PacketBuffer.insert(m_PacketBuffer.end(), p, p + sizeof(val));
 		};
+		
+		CL_CORE_ASSERT(header.flags, "Header to be written needs flags"); // no validity check
+		// TODO: flag Validity Check util
+		CL_CORE_ASSERT(header.protocol == HEADER_VERSION, "Mismatch header versions!");
 
 		append(HEADER_VERSION);
-		append(flags);
+		append(header.flags);
 
-		auto type{ static_cast<PacketFlags>(flags & TYPE_MASK) };
+		auto type{ static_cast<PacketFlags>(header.flags & TYPE_MASK) };
 		if (type == PacketFlags::CONNECTION_REQUEST || 
 			type == PacketFlags::CONNECTION_REJECT ||
 			type == PacketFlags::CONNECTION_ACCEPT ||
 			type == PacketFlags::HEARTBEAT) return;
 
-		append(seq);
-		append(ackf);
-		append(lastReceiv);
-		append(sessionID);
-		if ((flags & PacketFlags::FRAGMENT) != 0)	append(frag);
+		append(header.seqNum);
+		append(header.ackField);
+		append(header.lastSeqRecv);
+		append(header.sessionID);
+		if ((header.flags & PacketFlags::FRAGMENT) != 0)	append(header.fragLoad);
 		return;
+	}
+
+	HeaderInfo NetworkManager::parseHeader()
+	{
+		auto size = m_PacketBuffer.size();
+		auto data = m_PacketBuffer.data();
+
+		if (size < (sizeof(HeaderInfo::protocol) + sizeof(HeaderInfo::flags))) 
+			return {};
+
+		HeaderInfo info{};
+		// Check header version.
+		std::memcpy(&info.protocol, data, sizeof(info.protocol));
+		info.offset += sizeof(info.protocol);
+
+		if (info.protocol != HEADER_VERSION) return {};
+
+		// Check flags
+		std::memcpy(&info.flags, data + info.offset, sizeof(info.flags));
+		info.offset += sizeof(info.flags);
+
+		// maximum one channel
+		auto channels{ info.flags & CHANNEL_MASK };
+		if ((channels & (channels - 1)) != 0 || channels == 0) return {};
+		
+		// Ensure packet has fields
+		if (size - info.offset < 
+			sizeof(PacketHeader::SequenceNumber) +
+			sizeof(PacketHeader::ACKField) +
+			sizeof(PacketHeader::LastSeqReceived) +
+			sizeof(PacketHeader::sessionID)) {
+			return info;
+		}
+
+		std::memcpy(&info.seqNum, data + info.offset, sizeof(info.seqNum));
+		info.offset += sizeof(info.seqNum);
+		std::memcpy(&info.ackField, data + info.offset, sizeof(info.ackField));
+		info.offset += sizeof(info.ackField);
+		std::memcpy(&info.lastSeqRecv, data + info.offset, sizeof(info.lastSeqRecv));
+		info.offset += sizeof(info.lastSeqRecv);
+		std::memcpy(&info.sessionID, data + info.offset, sizeof(info.sessionID));
+		info.offset += sizeof(info.sessionID);
+
+		if (info.flags & PacketFlags::FRAGMENT) {
+			if (size - info.offset < sizeof(FragmentLoad)) return {};
+			std::memcpy(&info.fragLoad, data + info.offset, sizeof(info.fragLoad));
+		}
+
+		return info;
 	}
 
 	bool NetworkManager::handlePacket(PacketInfo info)
 	{
-		// Check header version.
-		int cursor{};
-		uint32_t packetPV{};
-		std::memcpy(&packetPV, m_PacketBuffer.data(), sizeof(packetPV));
-		cursor += sizeof(packetPV);
-
-		if (packetPV != HEADER_VERSION)	return false;
-		
-		PacketFlags flags{};
-		std::memcpy(&flags, m_PacketBuffer.data() + cursor, sizeof(flags));
-		cursor += sizeof(flags);
-
-		// maximum one channel
-		auto channels{ flags & CHANNEL_MASK };
-		if ((channels & (channels - 1)) != 0 || channels == 0) return false;
-
+		HeaderInfo header{ parseHeader() };
+		uint32_t payloadSize{ static_cast<uint32_t>(m_PacketBuffer.size() - header.offset) };
 		// switch on flag
-		switch (flags & TYPE_MASK) {
+		switch (auto type{ header.flags & TYPE_MASK }; type) {
 		case PacketFlags::INVALID:
 			return false;
 			break;
 		case PacketFlags::CONNECTION_REQUEST:
+			if (!(header.flags & PacketFlags::RELIABLE) ||
+				header.flags & PacketFlags::FRAGMENT) return false;
+
+			handleConnectionRequest(info, header);
+			break;
 		case PacketFlags::CONNECTION_ACCEPT:
 		case PacketFlags::CONNECTION_REJECT:
-			if (!(flags & PacketFlags::RELIABLE) || flags & PacketFlags::FRAGMENT) return false;
-			handleConnection(info);
 			break;
 		default:
 			return false;
@@ -157,9 +201,55 @@ namespace Carnival::Network {
 		return true;
 	}
 
-	void NetworkManager::handleConnection(PacketInfo info)
+	bool NetworkManager::isValidRebind(const Session& sesh, const HeaderInfo& header) const
+	{
+		// timeout not elapsed
+		if (getTime() - sesh.endpoint[1].lastRecvTime > m_Policy.disconnect)
+			return false;
+
+		const auto& rel = sesh.states[1];
+		// Sequence Must make sense
+		if (header.lastSeqRecv + 32 < rel.lastSent ||
+			header.lastSeqRecv > rel.lastSent) return false;
+		
+		// ACK field validation
+		uint32_t diff{ rel.lastSent - header.lastSeqRecv };
+		uint32_t mask = (diff == 32) ? UINT32_MAX : ((1 << diff) - 1);
+		if ((header.ackField & ~mask) == 0) return false;
+
+		return true;
+	}
+
+	void NetworkManager::handleConnectionRequest(PacketInfo info, const HeaderInfo& header)
 	{
 		// check existing sessions
+		if (header.sessionID != 0) {
+			if (auto it{ m_Sessions.find(header.sessionID) }; it != m_Sessions.end()) {
+				auto& localEndPoint = it->second.endpoint[1];
+				auto state = localEndPoint.state;
+
+				if (state == ConnectionState::DROPPING || state == ConnectionState::DISCONNECTED) { 
+					rejectConnection(info.fromAddr, info.fromPort); 
+					return;
+				}
+				if (localEndPoint.addr == info.fromAddr && localEndPoint.port == info.fromPort) {
+					acceptConnection(it->first);
+					return;
+				}
+				if (!isValidRebind(it->second, header)) {
+					rejectConnection(info.fromAddr, info.fromPort);
+					return;
+				}
+				localEndPoint.addr = info.fromAddr;
+				localEndPoint.port = info.fromPort;
+				localEndPoint.lastRecvTime = getTime();
+				acceptConnection(it->first);
+			}
+			else	rejectConnection(info.fromAddr, info.fromPort);
+			return;
+		}
+
+		// Packet session id == 0, 
 		for (const auto& [id, sesh] : m_Sessions) {
 			if (sesh.endpoint[1].addr == info.fromAddr && sesh.endpoint[1].port == info.fromPort) {
 				if (sesh.endpoint[1].state == ConnectionState::DROPPING) {
@@ -199,13 +289,24 @@ namespace Carnival::Network {
 		acceptConnection(ID);
 	}
 
-	void NetworkManager::handlePayload(PacketInfo info)
+	void NetworkManager::handlePayload(PacketInfo info, const HeaderInfo& header)
 	{
 	}
 
 	uint32_t NetworkManager::createSession(const PendingPeer& info)
 	{
-		return 0;
+
+		auto [it, inserted] = m_Sessions.try_emplace(generateSessionID(), Session{});
+		Session& sesh = it->second;
+		auto& reliable_end = sesh.endpoint[1];
+
+		reliable_end.addr = info.addr;
+		reliable_end.port = info.port;
+		reliable_end.state = ConnectionState::CONNECTED;
+		reliable_end.lastRecvTime = getTime();
+		reliable_end.lastSentTime = info.lastSendTime;
+
+		return it->first;
 	}
 
 	void NetworkManager::acceptConnection(uint32_t sessionID)

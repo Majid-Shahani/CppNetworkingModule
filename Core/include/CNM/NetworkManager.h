@@ -36,13 +36,15 @@ namespace Carnival::Network {
 		void sendUnreliableData();
 		void sendSnapshot();
 
-		void writeHeader(PacketFlags flags,	uint32_t sessionID = 0,
-			uint32_t seq = 0, uint32_t ackf = 0,
-			uint32_t lastReceiv = 0, FragmentLoad frag = {});
+		void writeHeader(const HeaderInfo& header);
+		HeaderInfo parseHeader();
 
 		bool handlePacket(const PacketInfo);
-		void handleConnection(const PacketInfo);
-		void handlePayload(const PacketInfo);
+
+		void handleConnectionRequest(const PacketInfo, const HeaderInfo&);
+		void handlePayload(const PacketInfo, const HeaderInfo&);
+
+		bool isValidRebind(const Session&, const HeaderInfo&) const;
 		uint32_t createSession(const PendingPeer& info);
 
 		void acceptConnection(uint32_t sessionID);
