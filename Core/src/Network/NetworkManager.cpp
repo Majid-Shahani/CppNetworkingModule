@@ -303,18 +303,21 @@ namespace Carnival::Network {
 
 	uint32_t NetworkManager::createSession(const PendingPeer& info)
 	{
+		while (true) {
+			uint32_t id{ generateSessionID() };
+			auto [it, inserted] = m_Sessions.try_emplace(id, Session{});
+			if (!inserted) continue;
+			Session& sesh = it->second;
+			auto& reliable_end = sesh.endpoint[1];
 
-		auto [it, inserted] = m_Sessions.try_emplace(generateSessionID(), Session{});
-		Session& sesh = it->second;
-		auto& reliable_end = sesh.endpoint[1];
+			reliable_end.addr = info.addr;
+			reliable_end.port = info.port;
+			reliable_end.state = ConnectionState::CONNECTED;
+			reliable_end.lastRecvTime = getTime();
+			reliable_end.lastSentTime = info.lastSendTime;
 
-		reliable_end.addr = info.addr;
-		reliable_end.port = info.port;
-		reliable_end.state = ConnectionState::CONNECTED;
-		reliable_end.lastRecvTime = getTime();
-		reliable_end.lastSentTime = info.lastSendTime;
-
-		return it->first;
+			return id;
+		}
 	}
 
 	void NetworkManager::acceptConnection(uint32_t sessionID)
