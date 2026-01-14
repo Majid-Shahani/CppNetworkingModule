@@ -7,7 +7,7 @@ namespace Carnival::Network {
 
 	static constexpr uint32_t	HEADER_VERSION	= utils::fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
 	static constexpr uint8_t	CHANNELS		= 3; // 0 - Unreliable, 1 - Reliable, 2 - Snapshot
-	static constexpr uint8_t	SOCKET_COUNT	= CHANNELS - 1;
+	static constexpr uint8_t	SOCKET_COUNT	= CHANNELS - 1; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
 
 	// Address will be set in host byte order after call to bind / send
 	enum SocketStatus : uint8_t {
@@ -84,6 +84,8 @@ namespace Carnival::Network {
 		uint32_t ackField{};
 		uint32_t lastSeqRecv{};
 		uint32_t sessionID{};
+		uint32_t updatedAddr{};
+		uint16_t updatedPort{};
 		FragmentLoad fragLoad{};
 		PacketFlags flags{ INVALID };
 		uint8_t offset{};
@@ -127,7 +129,7 @@ namespace Carnival::Network {
 		ConnectionState state{ ConnectionState::DISCONNECTED };
 	};
 	struct Session {
-		std::array<Endpoint, SOCKET_COUNT>	endpoint;
+		std::array<Endpoint, SOCKET_COUNT>	endpoint; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
 		std::array<ChannelState, CHANNELS>	states; // 0 - Unreliable, 1 - Reliable Unordered, 2 - Snapshot
 	};
 

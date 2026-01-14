@@ -112,18 +112,14 @@ namespace Carnival::Network {
 
 		append(HEADER_VERSION);
 		append(header.flags);
-
-		auto type{ static_cast<PacketFlags>(header.flags & TYPE_MASK) };
-		if (type == PacketFlags::CONNECTION_REQUEST || 
-			type == PacketFlags::CONNECTION_REJECT ||
-			type == PacketFlags::CONNECTION_ACCEPT ||
-			type == PacketFlags::HEARTBEAT) return;
-
 		append(header.seqNum);
 		append(header.ackField);
 		append(header.lastSeqRecv);
 		append(header.sessionID);
-		if ((header.flags & PacketFlags::FRAGMENT) != 0)	append(header.fragLoad);
+
+		if ((header.flags & PacketFlags::FRAGMENT) != 0)
+			append(header.fragLoad);
+
 		return;
 	}
 
@@ -132,7 +128,9 @@ namespace Carnival::Network {
 		auto size = m_PacketBuffer.size();
 		auto data = m_PacketBuffer.data();
 
-		if (size < (sizeof(HeaderInfo::protocol) + sizeof(HeaderInfo::flags))) 
+		if (size < (sizeof(HeaderInfo::protocol) + sizeof(HeaderInfo::flags) +
+			sizeof(PacketHeader::SequenceNumber) + sizeof(PacketHeader::ACKField) +
+			sizeof(PacketHeader::LastSeqReceived) + sizeof(PacketHeader::sessionID)))
 			return {};
 
 		HeaderInfo info{};
@@ -145,19 +143,9 @@ namespace Carnival::Network {
 		// Check flags
 		std::memcpy(&info.flags, data + info.offset, sizeof(info.flags));
 		info.offset += sizeof(info.flags);
-
 		// maximum one channel
 		auto channels{ info.flags & CHANNEL_MASK };
 		if ((channels & (channels - 1)) != 0 || channels == 0) return {};
-		
-		// Ensure packet has fields
-		if (size - info.offset < 
-			sizeof(PacketHeader::SequenceNumber) +
-			sizeof(PacketHeader::ACKField) +
-			sizeof(PacketHeader::LastSeqReceived) +
-			sizeof(PacketHeader::sessionID)) {
-			return info;
-		}
 
 		std::memcpy(&info.seqNum, data + info.offset, sizeof(info.seqNum));
 		info.offset += sizeof(info.seqNum);
@@ -168,9 +156,11 @@ namespace Carnival::Network {
 		std::memcpy(&info.sessionID, data + info.offset, sizeof(info.sessionID));
 		info.offset += sizeof(info.sessionID);
 
+		// Check for fragment bit and copy fragment load
 		if (info.flags & PacketFlags::FRAGMENT) {
 			if (size - info.offset < sizeof(FragmentLoad)) return {};
 			std::memcpy(&info.fragLoad, data + info.offset, sizeof(info.fragLoad));
+			info.offset += sizeof(info.fragLoad);
 		}
 
 		return info;
@@ -203,17 +193,35 @@ namespace Carnival::Network {
 
 	bool NetworkManager::isValidRebind(const Session& sesh, const HeaderInfo& header) const
 	{
+		uint32_t channelIndex{}, endpointIndex{};
+
+		if (auto channel{ header.flags & CHANNEL_MASK }; channel & PacketFlags::UNRELIABLE) {
+			channelIndex = 0;
+			endpointIndex = 0;
+		}
+		else if (channel & PacketFlags::RELIABLE) {
+			channelIndex = 1;
+			endpointIndex = 1;
+		}
+		else {
+			channelIndex = 2;
+			endpointIndex = 1;
+		}
+		const auto& state = sesh.states[channelIndex];
+		const auto& ep = sesh.endpoint[endpointIndex];
+		
+		if (!(ep.state == ConnectionState::CONNECTED)) return false;
+
 		// timeout not elapsed
-		if (getTime() - sesh.endpoint[1].lastRecvTime > m_Policy.disconnect)
+		if (getTime() - ep.lastRecvTime > m_Policy.disconnect)
 			return false;
 
-		const auto& rel = sesh.states[1];
 		// Sequence Must make sense
-		if (header.lastSeqRecv + 32 < rel.lastSent ||
-			header.lastSeqRecv > rel.lastSent) return false;
+		if (header.lastSeqRecv + 32 < state.lastSent ||
+			header.lastSeqRecv > state.lastSent) return false;
 		
 		// ACK field validation
-		uint32_t diff{ rel.lastSent - header.lastSeqRecv };
+		uint32_t diff{ state.lastSent - header.lastSeqRecv };
 		uint32_t mask = (diff == 32) ? UINT32_MAX : ((1 << diff) - 1);
 		if ((header.ackField & ~mask) == 0) return false;
 
