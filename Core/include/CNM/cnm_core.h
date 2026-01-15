@@ -84,8 +84,6 @@ namespace Carnival::Network {
 		uint32_t ackField{};
 		uint32_t lastSeqRecv{};
 		uint32_t sessionID{};
-		uint32_t updatedAddr{};
-		uint16_t updatedPort{};
 		FragmentLoad fragLoad{};
 		PacketFlags flags{ INVALID };
 		uint8_t offset{};
@@ -115,9 +113,10 @@ namespace Carnival::Network {
 	//======================================== Session =============================//
 
 	struct ChannelState {
-		uint32_t	receivedACKField{};
-		uint32_t	lastSent{};
-		uint32_t	lastReceived{};
+		uint32_t	receivedACKField{}; // Acks of sent messages
+		uint32_t	lastSent{}; // last sent sequence number
+		uint32_t	sendingAckF{};
+		uint32_t	lastReceived{}; // last received sequence number
 		uint16_t	batchNumber{};
 		uint16_t	FRAGMENT_COUNT{};
 	};

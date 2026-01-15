@@ -32,20 +32,29 @@ namespace Carnival::Network {
 		bool attemptConnect(ipv4_addr addr, uint16_t port);
 	private:
 		static uint32_t getTime();
-		void sendReliableData();
-		void sendUnreliableData();
-		void sendSnapshot();
+		bool sendReliable(ipv4_addr addr, uint16_t port);
+		bool sendUnreliable(ipv4_addr addr, uint16_t port);
+		// void sendSnapshot(ipv4_addr addr, uint16_t port);
 
 		void writeHeader(const HeaderInfo& header);
 		HeaderInfo parseHeader();
+		
+		bool updateSessionStats(Session& sesh, 
+			const PacketInfo packet,
+			const HeaderInfo& header,
+			const uint16_t endpointIndex,
+			const uint16_t channelIndex);
 
 		bool handlePacket(const PacketInfo);
 
 		void handleConnectionRequest(const PacketInfo, const HeaderInfo&);
+		bool handleConnectionAccept(const PacketInfo, const HeaderInfo&);
+		bool handleConnectionReject(const PacketInfo, const HeaderInfo&);
+
 		void handlePayload(const PacketInfo, const HeaderInfo&);
 
-		bool isValidRebind(const Session&, const HeaderInfo&) const;
 		uint32_t createSession(const PendingPeer& info);
+		bool createSession(const PendingPeer& info, uint32_t Key);
 
 		void acceptConnection(uint32_t sessionID);
 		void rejectConnection(ipv4_addr addr, uint16_t port);

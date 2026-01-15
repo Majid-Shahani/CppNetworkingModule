@@ -86,17 +86,14 @@ namespace Carnival::Network {
 			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE),
 		};
 		writeHeader(header);
-		
-		// Need to use a command buffer and return a promise.
+
+		// Need to use a command buffer and return a future.
 		// sockets cannot be used concurrently.
-		
-		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, addr, port) }; res) {
-			m_Stats.bytesSent += m_PacketBuffer.size();
-			m_Stats.packetsSent++;
+		if (bool res{ sendReliable(addr, port) }; res) {
 			m_PendingConnections.emplace_back(addr, getTime(), port, 1);
 			return true;
 		}
-		return false;
+		else return false;
 	}
 
 	void NetworkManager::writeHeader(const HeaderInfo& header)
@@ -166,6 +163,64 @@ namespace Carnival::Network {
 		return info;
 	}
 
+	bool NetworkManager::updateSessionStats(Session& sesh,
+		const PacketInfo packet,
+		const HeaderInfo& header,
+		const uint16_t endpointIndex,
+		const uint16_t channelIndex)
+	{
+		auto& state = sesh.states[channelIndex];
+		auto& ep = sesh.endpoint[endpointIndex];
+		const uint32_t now = getTime();
+
+		if (ep.state == ConnectionState::DISCONNECTED
+			|| ep.state == ConnectionState::DROPPING)
+			return false;
+
+		// timeout not elapsed
+		if (now - ep.lastRecvTime > m_Policy.disconnect)
+			return false;
+
+		// Sequence Must make sense
+		if (header.lastSeqRecv + 32 < state.lastSent ||
+			header.lastSeqRecv > state.lastSent) return false;
+		
+		// Too old to care
+		if (header.seqNum + 32 < state.lastReceived) return false;
+		
+		// Too far ahead // Desync!
+		if (header.seqNum > state.lastReceived + 32) return false;
+
+		uint32_t diff{ state.lastSent - header.lastSeqRecv };
+		// Nat Rebind
+		if (packet.fromAddr != ep.addr || packet.fromPort != ep.port) {
+			// ACK field validation
+			uint32_t mask = (diff == 32) ? UINT32_MAX : ((1 << diff) - 1);
+			if (header.ackField & ~mask) return false;
+			if (state.lastSent != 0 && (header.ackField & mask) == 0) return false;
+
+			ep.addr = packet.fromAddr;
+			ep.port = packet.fromPort;
+		}
+		
+		if (header.seqNum > state.lastReceived) {
+			state.sendingAckF <<= header.seqNum - state.lastReceived;
+			state.lastReceived = header.seqNum;
+			state.sendingAckF |= 1;
+		}
+		else {
+			state.sendingAckF |= 1 << state.lastReceived - header.seqNum;
+		}
+
+		ep.lastRecvTime = now;
+
+		uint32_t peerAckMask = header.ackField << diff;
+		peerAckMask |= (1u << diff);
+		state.receivedACKField |= peerAckMask;
+
+		return true;
+	}
+
 	bool NetworkManager::handlePacket(PacketInfo info)
 	{
 		HeaderInfo header{ parseHeader() };
@@ -182,48 +237,20 @@ namespace Carnival::Network {
 			handleConnectionRequest(info, header);
 			break;
 		case PacketFlags::CONNECTION_ACCEPT:
+			if (!(header.flags & PacketFlags::RELIABLE) ||
+				header.flags & PacketFlags::FRAGMENT) return false;
+
+			return handleConnectionAccept(info, header);
+			break;
 		case PacketFlags::CONNECTION_REJECT:
+			if (!(header.flags & PacketFlags::RELIABLE) ||
+				header.flags & PacketFlags::FRAGMENT) return false;
+
+			return handleConnectionReject(info, header);
 			break;
 		default:
 			return false;
 		}
-
-		return true;
-	}
-
-	bool NetworkManager::isValidRebind(const Session& sesh, const HeaderInfo& header) const
-	{
-		uint32_t channelIndex{}, endpointIndex{};
-
-		if (auto channel{ header.flags & CHANNEL_MASK }; channel & PacketFlags::UNRELIABLE) {
-			channelIndex = 0;
-			endpointIndex = 0;
-		}
-		else if (channel & PacketFlags::RELIABLE) {
-			channelIndex = 1;
-			endpointIndex = 1;
-		}
-		else {
-			channelIndex = 2;
-			endpointIndex = 1;
-		}
-		const auto& state = sesh.states[channelIndex];
-		const auto& ep = sesh.endpoint[endpointIndex];
-		
-		if (!(ep.state == ConnectionState::CONNECTED)) return false;
-
-		// timeout not elapsed
-		if (getTime() - ep.lastRecvTime > m_Policy.disconnect)
-			return false;
-
-		// Sequence Must make sense
-		if (header.lastSeqRecv + 32 < state.lastSent ||
-			header.lastSeqRecv > state.lastSent) return false;
-		
-		// ACK field validation
-		uint32_t diff{ state.lastSent - header.lastSeqRecv };
-		uint32_t mask = (diff == 32) ? UINT32_MAX : ((1 << diff) - 1);
-		if ((header.ackField & ~mask) == 0) return false;
 
 		return true;
 	}
@@ -241,33 +268,36 @@ namespace Carnival::Network {
 					return;
 				}
 				if (localEndPoint.addr == info.fromAddr && localEndPoint.port == info.fromPort) {
+					localEndPoint.state = ConnectionState::CONNECTED;
 					acceptConnection(it->first);
 					return;
 				}
-				if (!isValidRebind(it->second, header)) {
-					rejectConnection(info.fromAddr, info.fromPort);
-					return;
-				}
-				localEndPoint.addr = info.fromAddr;
-				localEndPoint.port = info.fromPort;
-				localEndPoint.lastRecvTime = getTime();
-				acceptConnection(it->first);
+				if (updateSessionStats(it->second, info, header, 1, 1))	acceptConnection(it->first);
+				else rejectConnection(info.fromAddr, info.fromPort);
 			}
 			else	rejectConnection(info.fromAddr, info.fromPort);
 			return;
 		}
 
 		// Packet session id == 0, 
-		for (const auto& [id, sesh] : m_Sessions) {
+#ifdef CL_DEBUG
+		for (auto& [id, sesh] : m_Sessions) {
 			if (sesh.endpoint[1].addr == info.fromAddr && sesh.endpoint[1].port == info.fromPort) {
+				CL_CORE_ASSERT(id == 0, "Wrong Session ID for request connection!");
+				// possibly just accept connection and send correct sessionID
+
+				/*
 				if (sesh.endpoint[1].state == ConnectionState::DROPPING) {
 					rejectConnection(info.fromAddr, info.fromPort);
 					return;
 				}
+				sesh.endpoint[1].state = ConnectionState::CONNECTED;
 				acceptConnection(id);
 				return;
+				*/
 			}
 		}
+#endif
 
 		// check max vs curr sessions
 		if (m_Sessions.size() >= m_MaxSessions) {
@@ -297,6 +327,37 @@ namespace Carnival::Network {
 		acceptConnection(ID);
 	}
 
+	bool NetworkManager::handleConnectionAccept(const PacketInfo packet, const HeaderInfo& header)
+	{
+		if (!header.sessionID) return false;
+
+		if (m_Sessions.contains(header.sessionID)) {
+			auto& sesh{ m_Sessions.at(header.sessionID) };
+			if (sesh.endpoint[1].state == ConnectionState::DISCONNECTED ||
+				sesh.endpoint[1].state == ConnectionState::DROPPING) return true;
+			if (updateSessionStats(sesh, packet, header, 1, 1))
+				return true;
+			else return false;
+		}
+
+		for (auto& pending : m_PendingConnections) {
+			if (pending.addr == packet.fromAddr && pending.port == packet.fromPort) {
+				if (createSession(pending, header.sessionID))
+					return true;
+				else { // ID collision
+					std::print("ID Collision when creating session from connectionAccept: {}", header.sessionID);
+					return true;				}
+			}
+		}
+
+		return false;
+	}
+
+	bool NetworkManager::handleConnectionReject(const PacketInfo, const HeaderInfo&)
+	{
+		return false;
+	}
+
 	void NetworkManager::handlePayload(PacketInfo info, const HeaderInfo& header)
 	{
 	}
@@ -305,23 +366,46 @@ namespace Carnival::Network {
 	{
 		while (true) {
 			uint32_t id{ generateSessionID() };
-			auto [it, inserted] = m_Sessions.try_emplace(id, Session{});
-			if (!inserted) continue;
-			Session& sesh = it->second;
-			auto& reliable_end = sesh.endpoint[1];
-
-			reliable_end.addr = info.addr;
-			reliable_end.port = info.port;
-			reliable_end.state = ConnectionState::CONNECTED;
-			reliable_end.lastRecvTime = getTime();
-			reliable_end.lastSentTime = info.lastSendTime;
-
+			if (!createSession(info, id)) continue;
 			return id;
 		}
+	}
+	bool NetworkManager::createSession(const PendingPeer& info, uint32_t key)
+	{
+		auto [it, inserted] = m_Sessions.try_emplace(key, Session{});
+		if (!inserted) return false;
+		Session& sesh = it->second;
+		auto& reliable_end = sesh.endpoint[1];
+
+		reliable_end.addr = info.addr;
+		reliable_end.port = info.port;
+		reliable_end.state = ConnectionState::CONNECTED;
+		reliable_end.lastRecvTime = getTime();
+		reliable_end.lastSentTime = info.lastSendTime;
+
+		sesh.endpoint[0].state = ConnectionState::CONNECTING;
+
+		return true;
 	}
 
 	void NetworkManager::acceptConnection(uint32_t sessionID)
 	{
+		m_PacketBuffer.clear();
+		auto& sesh = m_Sessions.at(sessionID);
+
+		CL_CORE_ASSERT(sesh.endpoint[1].state == ConnectionState::CONNECTED, 
+			"Endpoint must be connected before sending");
+		sesh.states[1].receivedACKField <<= 1;
+		HeaderInfo info{
+			.protocol{ HEADER_VERSION },
+			.seqNum{sesh.states[1].lastSent++},
+			.ackField{sesh.states[1].sendingAckF},
+			.lastSeqRecv{sesh.states[1].lastReceived},
+			.sessionID{sessionID},
+			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_ACCEPT | PacketFlags::RELIABLE),
+		};
+		writeHeader(info);
+		sendReliable(sesh.endpoint[1].addr, sesh.endpoint[1].port);
 	}
 
 	void NetworkManager::rejectConnection(ipv4_addr addr, uint16_t port)
@@ -334,14 +418,30 @@ namespace Carnival::Network {
 		return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
 	}
 
-	void NetworkManager::sendReliableData()
+	bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port)
 	{
-	}
-	void NetworkManager::sendUnreliableData()
-	{
-	}
-	void NetworkManager::sendSnapshot()
-	{
-	}
+		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, addr, port) }; res) {
+			m_Stats.bytesSent += m_PacketBuffer.size();
+			m_Stats.packetsSent++;
 
+			return true;
+		}
+		return false;
+	}
+	bool NetworkManager::sendUnreliable(ipv4_addr addr, uint16_t port)
+	{
+		if (auto res{ m_Socks[0].sendPackets(m_PacketBuffer, addr, port) }; res) {
+			m_Stats.bytesSent += m_PacketBuffer.size();
+			m_Stats.packetsSent++;
+
+			return true;
+		}
+		return false;
+	}
+	/*
+	void NetworkManager::sendSnapshot(ipv4_addr addr, uint16_t port)
+	{
+		TO BE IMPLEMENTED
+	}
+	*/
 }
