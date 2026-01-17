@@ -209,7 +209,7 @@ namespace Carnival::Network {
 			state.sendingAckF |= 1;
 		}
 		else {
-			state.sendingAckF |= 1 << state.lastReceived - header.seqNum;
+			state.sendingAckF |= 1 << (state.lastReceived - header.seqNum);
 		}
 
 		ep.lastRecvTime = now;
@@ -353,8 +353,14 @@ namespace Carnival::Network {
 		return false;
 	}
 
-	bool NetworkManager::handleConnectionReject(const PacketInfo, const HeaderInfo&)
+	bool NetworkManager::handleConnectionReject(const PacketInfo packet, const HeaderInfo& header)
 	{
+		for (auto it = m_PendingConnections.begin(); it != m_PendingConnections.end(); it++) {
+			if (it->addr == packet.fromAddr && it->port == packet.fromPort) {
+				m_PendingConnections.erase(it);
+				return true;
+			}
+		}
 		return false;
 	}
 
@@ -410,6 +416,13 @@ namespace Carnival::Network {
 
 	void NetworkManager::rejectConnection(ipv4_addr addr, uint16_t port)
 	{
+		m_PacketBuffer.clear();
+		HeaderInfo info{
+			.protocol = HEADER_VERSION,
+			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_REJECT | PacketFlags::RELIABLE),
+		};
+		writeHeader(info);
+		sendReliable(addr, port);
 	}
 
 	uint32_t NetworkManager::getTime()
