@@ -27,7 +27,7 @@ namespace Carnival::Network {
 		bool sendPackets(std::span<const std::byte> packet, const ipv4_addr outAddr, uint16_t port = 0) const;
 
 		bool hasPacket() const noexcept;
-		PacketInfo receivePacket(std::span<std::byte> packet) const noexcept;
+		PacketInfo receivePacket(std::vector<std::byte>& packet) const noexcept;
 
 		// Status Checking
 		bool isOpen() const	noexcept		{ return (m_Status & SocketStatus::OPEN); }

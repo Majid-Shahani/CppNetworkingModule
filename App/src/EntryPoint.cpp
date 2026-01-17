@@ -74,6 +74,7 @@ int main() {
 	};
 	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(), sock, 64) };
 	netMan->pollIO();
+	netMan->pollIncoming();
 	// ============================================ NETWORK =========================================== //
 
 	// Scan / Wait for Connection Requests

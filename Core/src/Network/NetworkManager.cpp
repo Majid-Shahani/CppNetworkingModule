@@ -28,28 +28,12 @@ namespace Carnival::Network {
 			sock.openSocket();
 			sock.bindSocket();
 		}
-		m_PacketBuffer.reserve(1500);
+		m_PacketBuffer.reserve(PACKET_MTU);
 	}
 	void NetworkManager::pollIO()
 	{
 		m_PacketBuffer.clear();
-
-		const char test[] = "Hello boys!";
-		m_PacketBuffer.insert(m_PacketBuffer.end(), reinterpret_cast<const std::byte*>(test),
-			reinterpret_cast<const std::byte*>(test + sizeof(test)));
-		std::print("Data in packet buffer: {}\n", reinterpret_cast<const char*>(m_PacketBuffer.data()));
-
-		if (m_Socks[0].sendPackets(m_PacketBuffer, m_Socks[1].getAddr(), m_Socks[1].getPort()))
-			std::print("Packet Sent to Socket 2\n");
-		
-		m_PacketBuffer.clear();
-		while (!m_Socks[1].hasPacket());
-		auto from{ m_Socks[1].receivePacket(m_PacketBuffer) };
-		if (from.fromAddr == m_Socks[0].getAddr() && from.fromPort == m_Socks[0].getPort()) {
-			std::print("Packet from socket 1 Received!\nPacket: {}", reinterpret_cast<const char*>(m_PacketBuffer.data()));
-		}
-
-		attemptConnect(m_Socks[0].getAddr(), m_Socks[1].getPort());
+		attemptConnect(m_Socks[1].getAddr(), m_Socks[1].getPort());
 	}
 	void NetworkManager::pollOngoing()
 	{
@@ -60,12 +44,14 @@ namespace Carnival::Network {
 			while (sock.hasPacket()) {
 				m_PacketBuffer.clear();
 				PacketInfo info = sock.receivePacket(m_PacketBuffer);
-				m_Stats.bytesReceived += m_PacketBuffer.size();
-				m_Stats.packetsReceived++;
+				if (m_PacketBuffer.size() != 0) {
+					m_Stats.packetsReceived++;
+					m_Stats.bytesReceived += m_PacketBuffer.size();
 
-				// TODO: Check Against Drop List
+					// TODO: Check Against Drop List
 
-				if (!handlePacket(info)) m_Stats.packetsDropped++;
+					if (!handlePacket(info)) m_Stats.packetsDropped++;
+				}
 			}
 		}
 	}
@@ -203,7 +189,7 @@ namespace Carnival::Network {
 			ep.port = packet.fromPort;
 		}
 		
-		if (header.seqNum > state.lastReceived) {
+		if (header.seqNum >= state.lastReceived) {
 			state.sendingAckF <<= header.seqNum - state.lastReceived;
 			state.lastReceived = header.seqNum;
 			state.sendingAckF |= 1;
@@ -330,7 +316,7 @@ namespace Carnival::Network {
 	bool NetworkManager::handleConnectionAccept(const PacketInfo packet, const HeaderInfo& header)
 	{
 		if (!header.sessionID) return false;
-
+		
 		if (m_Sessions.contains(header.sessionID)) {
 			auto& sesh{ m_Sessions.at(header.sessionID) };
 			if (sesh.endpoint[1].state == ConnectionState::DISCONNECTED ||

@@ -15,7 +15,7 @@ namespace Carnival::ECS {
 
 namespace Carnival::Network {
 	class NetworkManager {
-	public:
+	public:		
 		NetworkManager(ECS::World* pWorld, const SocketData& sockData, uint16_t maxSessions);
 		~NetworkManager() = default;
 

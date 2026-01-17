@@ -4,6 +4,7 @@
 #include <CNM/utils.h>
 
 namespace Carnival::Network {
+	constexpr static uint32_t PACKET_MTU{ 1200 };
 
 	static constexpr uint32_t	HEADER_VERSION	= utils::fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
 	static constexpr uint8_t	CHANNELS		= 3; // 0 - Unreliable, 1 - Reliable, 2 - Snapshot

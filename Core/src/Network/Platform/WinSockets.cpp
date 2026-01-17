@@ -179,18 +179,20 @@ namespace Carnival::Network {
 		int ready = WSAPoll(&pfd, 1, 0);
 		return (ready > 0 && (pfd.revents & POLLRDNORM));
 	}
-	PacketInfo Socket::receivePacket(std::span<std::byte> packet) const noexcept
+	PacketInfo Socket::receivePacket(std::vector<std::byte>& packet) const noexcept
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Receiving Packets.");
 		CL_CORE_ASSERT(m_Handle != INVALID_SOCKET, "Socket must be open and bound before receiving packets.");
 		
-		thread_local sockaddr_in from{};
-		thread_local int fromLength = sizeof(from);
-
+		sockaddr_in from{};
+		int fromLength = sizeof(from);
+		int size = packet.size();
+		packet.resize(PACKET_MTU);
 		int64_t bytes = recvfrom(m_Handle, reinterpret_cast<char*>(packet.data()),
-			static_cast<int>(packet.size()), 0, (sockaddr*)&from, &fromLength);
-	
+			static_cast<int>(PACKET_MTU), 0, (sockaddr*)&from, &fromLength);
+		packet.resize(size + bytes);
+
 		return { ntohl(from.sin_addr.s_addr), ntohs(from.sin_port) };
 	}
 
