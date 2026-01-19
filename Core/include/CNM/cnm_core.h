@@ -43,6 +43,7 @@ namespace Carnival::Network {
 	};
 
 	//===================================== PACKET HEADER ================================//
+
 	enum PacketFlags : uint8_t {
 		// EXCLUSIVE TYPE
 		INVALID				= 0,
@@ -135,11 +136,22 @@ namespace Carnival::Network {
 	};
 
 	//=========================================== Command ===================================//
+
 	struct NetCommand {
+		NetCommand(Session* s, uint32_t id, PacketFlags t)
+			: ep{ .sesh = s }, sessionID{ id }, type{ t } {}
+		NetCommand(ipv4_addr addr, uint16_t port, PacketFlags t)
+			: ep{ .endpoint{.addr = addr, .port = port} }, type{ t } {}
+
 		union {
 			Session* sesh{ nullptr };
-			PendingPeer* peer;
+			struct {
+				ipv4_addr addr{};
+				uint16_t port{};
+				uint16_t padding{};
+			} endpoint;
 		} ep;
+		uint32_t sessionID{};
 		PacketFlags type{};
 	};
 	

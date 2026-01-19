@@ -31,7 +31,7 @@ namespace Carnival::Network {
 		m_PacketBuffer.reserve(PACKET_MTU);
 	}
 
-	uint64_t NetworkManager::getTime()
+	uint64_t NetworkManager::getTime() noexcept
 	{
 		static const auto start = std::chrono::steady_clock::now();
 		return (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
@@ -109,28 +109,19 @@ namespace Carnival::Network {
 		m_ShouldStop.clear(std::memory_order::release);
 	}
 
-	bool NetworkManager::attemptConnect(ipv4_addr addr, uint16_t port)
+	void NetworkManager::attemptConnect(ipv4_addr addr, uint16_t port)
 	{	
-		// Prevent duplicate pending attempts
-		for (const auto& p : m_PendingConnections) {
-			if (p.addr == addr && p.port == port)
-				return false;
-		}
+		m_CommandBuffer.emplace_back(addr, port, static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE));
 
-		m_PacketBuffer.clear();
-		HeaderInfo header{
-			.protocol = HEADER_VERSION,
-			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE),
-		};
-		writeHeader(header);
-
-		// Need to use a command buffer and return a future.
-		// sockets cannot be used concurrently.
-		if (bool res{ sendReliable(addr, port) }; res) {
-			m_PendingConnections.emplace_back(getTime(), addr, port, 1);
-			return true;
+		// Prevent duplicate peer creation
+		for (auto& p : m_PendingConnections) {
+			if (p.addr == addr && p.port == port) {
+				p.retryCount++;
+				p.lastSendTime = getTime(); // not actually the time sent but last time requested
+				return;
+			}
 		}
-		else return false;
+		m_PendingConnections.emplace_back(getTime(), addr, port, 0);
 	}
 
 	void NetworkManager::writeHeader(const HeaderInfo& header)
@@ -445,10 +436,19 @@ namespace Carnival::Network {
 		return true;
 	}
 
-	void NetworkManager::acceptConnection(uint32_t sessionID)
+	void NetworkManager::sendRequest(ipv4_addr addr, uint16_t port) noexcept
 	{
 		m_PacketBuffer.clear();
-		auto& sesh = m_Sessions.at(sessionID);
+		HeaderInfo info{
+			.protocol = HEADER_VERSION,
+			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE),
+		};
+		writeHeader(info);
+		sendReliable(addr, port);
+	}
+	void NetworkManager::sendAccept(uint32_t sessionID, Session& sesh) noexcept
+	{
+		m_PacketBuffer.clear();
 
 		CL_CORE_ASSERT(sesh.endpoint[1].state == ConnectionState::CONNECTED, 
 			"Endpoint must be connected before sending");
@@ -462,9 +462,9 @@ namespace Carnival::Network {
 			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_ACCEPT | PacketFlags::RELIABLE),
 		};
 		writeHeader(info);
-		sendReliable(sesh.endpoint[1].addr, sesh.endpoint[1].port);
+		sendReliable(sesh.endpoint[1]);
 	}
-	void NetworkManager::rejectConnection(ipv4_addr addr, uint16_t port)
+	void NetworkManager::sendReject(ipv4_addr addr, uint16_t port) noexcept
 	{
 		m_PacketBuffer.clear();
 		HeaderInfo info{
@@ -475,7 +475,7 @@ namespace Carnival::Network {
 		sendReliable(addr, port);
 	}
 
-	bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port)
+	bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port) noexcept
 	{
 		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, addr, port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
@@ -485,7 +485,18 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
-	bool NetworkManager::sendUnreliable(ipv4_addr addr, uint16_t port)
+	bool NetworkManager::sendReliable(Endpoint& ep) noexcept
+	{
+		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, ep.addr, ep.port) }; res) {
+			m_Stats.bytesSent += m_PacketBuffer.size();
+			m_Stats.packetsSent++;
+			ep.lastSentTime = getTime();
+			return true;
+		}
+		return false;
+	}
+
+	bool NetworkManager::sendUnreliable(ipv4_addr addr, uint16_t port) noexcept
 	{
 		if (auto res{ m_Socks[0].sendPackets(m_PacketBuffer, addr, port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
@@ -495,6 +506,17 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
+	bool NetworkManager::sendUnreliable(Endpoint& ep) noexcept
+	{
+		if (auto res{ m_Socks[0].sendPackets(m_PacketBuffer, ep.addr, ep.port) }; res) {
+			m_Stats.bytesSent += m_PacketBuffer.size();
+			m_Stats.packetsSent++;
+			ep.lastSentTime = getTime();
+			return true;
+		}
+		return false;
+	}
+
 
 	void NetworkManager::handlePayload(PacketInfo info, const HeaderInfo& header)
 	{

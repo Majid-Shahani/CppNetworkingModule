@@ -28,11 +28,14 @@ namespace Carnival::Network {
 		void run(uint16_t tickRate); // Tickrate should be a power of two
 		void stop(); // blocking
 
-		bool attemptConnect(ipv4_addr addr, uint16_t port);
+		void attemptConnect(ipv4_addr addr, uint16_t port);
 	private:
-		static uint64_t getTime();
-		bool sendReliable(ipv4_addr addr, uint16_t port);
-		bool sendUnreliable(ipv4_addr addr, uint16_t port);
+		static uint64_t getTime() noexcept;
+
+		bool sendReliable(ipv4_addr addr, uint16_t port) noexcept;
+		bool sendReliable(Endpoint& ep) noexcept;
+		bool sendUnreliable(ipv4_addr addr, uint16_t port) noexcept;
+		bool sendUnreliable(Endpoint& ep) noexcept;
 		// void sendSnapshot(ipv4_addr addr, uint16_t port);
 
 		void writeHeader(const HeaderInfo& header);
@@ -56,8 +59,21 @@ namespace Carnival::Network {
 		uint32_t createSession(const PendingPeer& info);
 		bool createSession(const PendingPeer& info, uint32_t Key);
 
-		void acceptConnection(uint32_t sessionID);
-		void rejectConnection(ipv4_addr addr, uint16_t port);
+		inline void acceptConnection(uint32_t sessionID) 
+		{
+			m_CommandBuffer.emplace_back(&(m_Sessions.at(sessionID)),
+				sessionID,
+				static_cast<PacketFlags>(PacketFlags::CONNECTION_ACCEPT | PacketFlags::RELIABLE));
+		}
+		inline void rejectConnection(ipv4_addr addr, uint16_t port)
+		{
+			m_CommandBuffer.emplace_back(addr, port,
+				static_cast<PacketFlags>(PacketFlags::CONNECTION_ACCEPT | PacketFlags::RELIABLE));
+		}
+
+		void sendRequest(ipv4_addr addr, uint16_t port) noexcept;
+		void sendAccept(uint32_t sessionID, Session& sesh) noexcept;
+		void sendReject(ipv4_addr addr, uint16_t port) noexcept;
 
 		void pollOngoing(); // book keeping and keep connections alive
 		void pollIncoming(); // receive waiting packets

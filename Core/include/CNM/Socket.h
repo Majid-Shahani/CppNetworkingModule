@@ -24,7 +24,7 @@ namespace Carnival::Network {
 
 		// SocketData port (if 0) is overwritten after call to bindSocket
 		bool bindSocket();
-		bool sendPackets(std::span<const std::byte> packet, const ipv4_addr outAddr, uint16_t port = 0) const;
+		bool sendPackets(std::span<const std::byte> packet, const ipv4_addr outAddr, uint16_t port = 0) const noexcept;
 
 		bool hasPacket() const noexcept;
 		PacketInfo receivePacket(std::vector<std::byte>& packet) const noexcept;

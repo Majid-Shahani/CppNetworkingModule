@@ -150,7 +150,7 @@ namespace Carnival::Network {
 	}
 	bool Socket::sendPackets(std::span<const std::byte> packet,
 		const ipv4_addr outAddr, 
-		uint16_t port) const
+		uint16_t port) const noexcept
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Sending Packets.");
