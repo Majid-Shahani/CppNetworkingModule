@@ -73,15 +73,9 @@ int main() {
 		.status = SocketStatus::NONBLOCKING,
 	};
 	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(), sock, 64) };
-	netMan->pollIO();
-	netMan->pollIncoming();
-	// ============================================ NETWORK =========================================== //
-
-	// Scan / Wait for Connection Requests
-
-	// Accept / Deny
-
-	// Send Schema
+	std::jthread netRun{ [&]() {
+		netMan->run(128);
+	} };
 
 	// =========================================== Main Loop ========================================= //
 	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked
@@ -89,6 +83,9 @@ int main() {
 	PositionMoverSystem(*w, 1);
 	w->endUpdate();
 	// ============================================ CLEANUP =========================================== //
+	netMan->stop();
+	netRun.join();
+
 	/*
 	* client code :
 	*   request connection

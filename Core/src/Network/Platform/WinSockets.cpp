@@ -187,7 +187,7 @@ namespace Carnival::Network {
 		
 		sockaddr_in from{};
 		int fromLength = sizeof(from);
-		int size = packet.size();
+		int size = static_cast<int>(packet.size());
 		packet.resize(PACKET_MTU);
 		int64_t bytes = recvfrom(m_Handle, reinterpret_cast<char*>(packet.data()),
 			static_cast<int>(PACKET_MTU), 0, (sockaddr*)&from, &fromLength);

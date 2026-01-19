@@ -19,7 +19,7 @@ namespace {
 
 namespace Carnival::Network {
 	NetworkManager::NetworkManager(ECS::World* pWorld, const SocketData& sockData, uint16_t maxSessions)
-		: m_callback{ pWorld }, m_MaxSessions{ maxSessions }
+		: m_pWorld{ pWorld }, m_MaxSessions{ maxSessions }
 	{
 		for (auto& sock : m_Socks) {
 			sock.setInAddress(sockData.InAddress);
@@ -30,34 +30,85 @@ namespace Carnival::Network {
 		}
 		m_PacketBuffer.reserve(PACKET_MTU);
 	}
-	void NetworkManager::pollIO()
+
+	uint64_t NetworkManager::getTime()
 	{
-		m_PacketBuffer.clear();
-		attemptConnect(m_Socks[1].getAddr(), m_Socks[1].getPort());
+		static const auto start = std::chrono::steady_clock::now();
+		return (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
 	}
+
 	void NetworkManager::pollOngoing()
 	{
+		
 	}
 	void NetworkManager::pollIncoming()
 	{
-		for (auto& sock : m_Socks) {
-			while (sock.hasPacket()) {
-				m_PacketBuffer.clear();
-				PacketInfo info = sock.receivePacket(m_PacketBuffer);
-				if (m_PacketBuffer.size() != 0) {
-					m_Stats.packetsReceived++;
-					m_Stats.bytesReceived += m_PacketBuffer.size();
+		// Reliable
+		while (m_Socks[1].hasPacket()) {
+			m_PacketBuffer.clear();
+			PacketInfo info = m_Socks[1].receivePacket(m_PacketBuffer);
+			if (m_PacketBuffer.size() != 0) {
+				m_Stats.packetsReceived++;
+				m_Stats.bytesReceived += m_PacketBuffer.size();
 
-					// TODO: Check Against Drop List
+				// TODO: Check Against Drop List
 
-					if (!handlePacket(info)) m_Stats.packetsDropped++;
-				}
+				if (!handleReliablePacket(info)) m_Stats.packetsDropped++;
+			}
+		}
+		// Unreliable
+		while (m_Socks[0].hasPacket()) {
+			m_PacketBuffer.clear();
+			PacketInfo info = m_Socks[0].receivePacket(m_PacketBuffer);
+			if (m_PacketBuffer.size() != 0) {
+				m_Stats.packetsReceived++;
+				m_Stats.bytesReceived += m_PacketBuffer.size();
+
+				if (!handleUnreliablePacket(info)) m_Stats.packetsDropped++;
 			}
 		}
 	}
 	void NetworkManager::pollOutgoing()
 	{
+		// To be Implemented
 	}
+
+	void NetworkManager::run(uint16_t tickRate)
+	{
+		CL_CORE_ASSERT(tickRate && ((tickRate & (tickRate - 1)) == 0), "TickRate should be a power of two");
+		m_Running.test_and_set(std::memory_order::release);
+		m_Running.notify_all();
+
+		const uint32_t tickDiffUs{ 1'000'000ul >> std::countr_zero(tickRate) };
+		const uint32_t remainder{ 1'000'000ul & (tickRate - 1) };
+		uint32_t frac{};
+		m_NextTick = getTime() + tickDiffUs;
+
+		while (!m_ShouldStop.test(std::memory_order::acquire)) {
+			pollOngoing();
+			//pollIncoming();
+			pollOutgoing();
+
+			m_NextTick += tickDiffUs;
+			frac += remainder;
+			if (frac >= tickRate) {
+				m_NextTick++;
+				frac -= tickRate;
+			}
+		}
+		m_NextTick = 0;
+		m_Running.clear(std::memory_order::release);
+		m_Running.notify_all();
+	}
+
+	void NetworkManager::stop()
+	{
+		m_Running.wait(false, std::memory_order::acquire);
+		m_ShouldStop.test_and_set(std::memory_order::release);
+		m_Running.wait(true, std::memory_order::acquire);
+		m_ShouldStop.clear(std::memory_order::release);
+	}
+
 	bool NetworkManager::attemptConnect(ipv4_addr addr, uint16_t port)
 	{	
 		// Prevent duplicate pending attempts
@@ -76,7 +127,7 @@ namespace Carnival::Network {
 		// Need to use a command buffer and return a future.
 		// sockets cannot be used concurrently.
 		if (bool res{ sendReliable(addr, port) }; res) {
-			m_PendingConnections.emplace_back(addr, getTime(), port, 1);
+			m_PendingConnections.emplace_back(getTime(), addr, port, 1);
 			return true;
 		}
 		else return false;
@@ -105,7 +156,6 @@ namespace Carnival::Network {
 
 		return;
 	}
-
 	HeaderInfo NetworkManager::parseHeader()
 	{
 		auto size = m_PacketBuffer.size();
@@ -157,7 +207,7 @@ namespace Carnival::Network {
 	{
 		auto& state = sesh.states[channelIndex];
 		auto& ep = sesh.endpoint[endpointIndex];
-		const uint32_t now = getTime();
+		const uint64_t now = getTime();
 
 		if (ep.state == ConnectionState::DISCONNECTED
 			|| ep.state == ConnectionState::DROPPING)
@@ -207,33 +257,54 @@ namespace Carnival::Network {
 		return true;
 	}
 
-	bool NetworkManager::handlePacket(PacketInfo info)
+	bool NetworkManager::handleReliablePacket(const PacketInfo info)
 	{
 		HeaderInfo header{ parseHeader() };
 		uint32_t payloadSize{ static_cast<uint32_t>(m_PacketBuffer.size() - header.offset) };
+
+		if (auto channel{ header.flags & CHANNEL_MASK }; channel != PacketFlags::RELIABLE)
+			return false;
+
 		// switch on flag
 		switch (auto type{ header.flags & TYPE_MASK }; type) {
 		case PacketFlags::INVALID:
 			return false;
 			break;
-		case PacketFlags::CONNECTION_REQUEST:
-			if (!(header.flags & PacketFlags::RELIABLE) ||
-				header.flags & PacketFlags::FRAGMENT) return false;
 
+		case PacketFlags::CONNECTION_REQUEST:
+			if (header.flags & PacketFlags::FRAGMENT) return false;
 			handleConnectionRequest(info, header);
 			break;
-		case PacketFlags::CONNECTION_ACCEPT:
-			if (!(header.flags & PacketFlags::RELIABLE) ||
-				header.flags & PacketFlags::FRAGMENT) return false;
 
+		case PacketFlags::CONNECTION_ACCEPT:
+			if (header.flags & PacketFlags::FRAGMENT) return false;
 			return handleConnectionAccept(info, header);
 			break;
-		case PacketFlags::CONNECTION_REJECT:
-			if (!(header.flags & PacketFlags::RELIABLE) ||
-				header.flags & PacketFlags::FRAGMENT) return false;
 
+		case PacketFlags::CONNECTION_REJECT:
+			if (header.flags & PacketFlags::FRAGMENT) return false;
 			return handleConnectionReject(info, header);
 			break;
+
+		default:
+			return false;
+		}
+
+		return true;
+	}
+	bool NetworkManager::handleUnreliablePacket(const PacketInfo info)
+	{
+		HeaderInfo header{ parseHeader() };
+		uint32_t payloadSize{ static_cast<uint32_t>(m_PacketBuffer.size() - header.offset) };
+
+		if (auto channel{ header.flags & CHANNEL_MASK }; channel != PacketFlags::UNRELIABLE)
+			return false;
+
+		switch (auto type{ header.flags & TYPE_MASK }; type) {
+		case PacketFlags::INVALID:
+			return false;
+			break;
+
 		default:
 			return false;
 		}
@@ -304,15 +375,14 @@ namespace Carnival::Network {
 		// create new connect
 		// for now just accept
 		PendingPeer peer{
-			.addr = info.fromAddr,
 			.lastSendTime = getTime(),
+			.addr = info.fromAddr,
 			.port = info.fromPort,
 			.retryCount = 1,
 		};
 		uint32_t ID{ createSession(peer) };
 		acceptConnection(ID);
 	}
-
 	bool NetworkManager::handleConnectionAccept(const PacketInfo packet, const HeaderInfo& header)
 	{
 		if (!header.sessionID) return false;
@@ -338,7 +408,6 @@ namespace Carnival::Network {
 
 		return false;
 	}
-
 	bool NetworkManager::handleConnectionReject(const PacketInfo packet, const HeaderInfo& header)
 	{
 		for (auto it = m_PendingConnections.begin(); it != m_PendingConnections.end(); it++) {
@@ -348,10 +417,6 @@ namespace Carnival::Network {
 			}
 		}
 		return false;
-	}
-
-	void NetworkManager::handlePayload(PacketInfo info, const HeaderInfo& header)
-	{
 	}
 
 	uint32_t NetworkManager::createSession(const PendingPeer& info)
@@ -399,7 +464,6 @@ namespace Carnival::Network {
 		writeHeader(info);
 		sendReliable(sesh.endpoint[1].addr, sesh.endpoint[1].port);
 	}
-
 	void NetworkManager::rejectConnection(ipv4_addr addr, uint16_t port)
 	{
 		m_PacketBuffer.clear();
@@ -409,12 +473,6 @@ namespace Carnival::Network {
 		};
 		writeHeader(info);
 		sendReliable(addr, port);
-	}
-
-	uint32_t NetworkManager::getTime()
-	{
-		static const auto start = std::chrono::steady_clock::now();
-		return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
 	}
 
 	bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port)
@@ -437,6 +495,11 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
+
+	void NetworkManager::handlePayload(PacketInfo info, const HeaderInfo& header)
+	{
+	}
+
 	/*
 	void NetworkManager::sendSnapshot(ipv4_addr addr, uint16_t port)
 	{

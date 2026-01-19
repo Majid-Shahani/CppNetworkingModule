@@ -50,8 +50,9 @@ namespace Carnival::Network {
 		CONNECTION_REQUEST	= 2,
 		CONNECTION_ACCEPT	= 3,
 		CONNECTION_REJECT	= 4,
-		PAYLOAD				= 5,
-		ACKNOWLEDGEMENT		= 6,
+		STATE_LOAD			= 5,
+		EVENT_LOAD			= 6,
+		ACKNOWLEDGEMENT		= 7,
 		// CHANNEL ID
 		UNRELIABLE	= 1 << 3,
 		RELIABLE	= 1 << 4,
@@ -99,17 +100,17 @@ namespace Carnival::Network {
 		DROPPING,
 	};
 	struct PendingPeer {
+		uint64_t	lastSendTime{}; // in MicroSecond
 		ipv4_addr	addr{};
-		uint32_t	lastSendTime{};
 		uint16_t	port{};
 		uint16_t	retryCount{};
 	};
-	struct ReliabilityPolicy { // time in MS
-		uint16_t resendDelay	= 350;
-		uint16_t maxResendDelay = 3500;
-		uint16_t disconnect		= 5500;
-		uint16_t heartbeat		= 2350; // Time since last send
-		uint16_t maxRetries		= 10;
+	struct ReliabilityPolicy { // time in MicroSeconds
+		uint32_t resendDelay	= 350'000;
+		uint32_t maxResendDelay = 350'000'0;
+		uint32_t disconnect		= 5'500'000;
+		uint32_t heartbeat		= 2'350'000; // Time since last send
+		uint32_t maxRetries		= 10;
 	};
 	//======================================== Session =============================//
 
@@ -122,9 +123,9 @@ namespace Carnival::Network {
 		uint16_t	FRAGMENT_COUNT{};
 	};
 	struct Endpoint {
+		uint64_t	lastRecvTime{}; // in MicroSecond
+		uint64_t	lastSentTime{}; // in MicroSecond
 		ipv4_addr	addr{};
-		uint32_t	lastRecvTime{};
-		uint32_t	lastSentTime{};
 		uint16_t	port{};
 		ConnectionState state{ ConnectionState::DISCONNECTED };
 	};
@@ -133,6 +134,15 @@ namespace Carnival::Network {
 		std::array<ChannelState, CHANNELS>	states; // 0 - Unreliable, 1 - Reliable Unordered, 2 - Snapshot
 	};
 
+	//=========================================== Command ===================================//
+	struct NetCommand {
+		union {
+			Session* sesh{ nullptr };
+			PendingPeer* peer;
+		} ep;
+		PacketFlags type{};
+	};
+	
 	//=========================================== DEBUG ===================================//
 	struct NetworkStats {
 		uint64_t packetsSent{};

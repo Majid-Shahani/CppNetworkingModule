@@ -24,14 +24,13 @@ namespace Carnival::Network {
 		NetworkManager(NetworkManager&&)					= delete;
 		NetworkManager& operator=(NetworkManager&&)			= delete;
 		
-		void pollIO();
-		void pollOngoing(); // book keeping and keep connections alive
-		void pollIncoming(); // receive waiting packets
-		void pollOutgoing(); // send waiting messages
+		bool isRunning() { return m_Running.test(std::memory_order_acquire); }
+		void run(uint16_t tickRate); // Tickrate should be a power of two
+		void stop(); // blocking
 
 		bool attemptConnect(ipv4_addr addr, uint16_t port);
 	private:
-		static uint32_t getTime();
+		static uint64_t getTime();
 		bool sendReliable(ipv4_addr addr, uint16_t port);
 		bool sendUnreliable(ipv4_addr addr, uint16_t port);
 		// void sendSnapshot(ipv4_addr addr, uint16_t port);
@@ -45,7 +44,8 @@ namespace Carnival::Network {
 			const uint16_t endpointIndex,
 			const uint16_t channelIndex);
 
-		bool handlePacket(const PacketInfo);
+		bool handleReliablePacket(const PacketInfo);
+		bool handleUnreliablePacket(const PacketInfo);
 
 		void handleConnectionRequest(const PacketInfo, const HeaderInfo&);
 		bool handleConnectionAccept(const PacketInfo, const HeaderInfo&);
@@ -58,17 +58,28 @@ namespace Carnival::Network {
 
 		void acceptConnection(uint32_t sessionID);
 		void rejectConnection(ipv4_addr addr, uint16_t port);
+
+		void pollOngoing(); // book keeping and keep connections alive
+		void pollIncoming(); // receive waiting packets
+		void pollOutgoing(); // send waiting messages
 	private:
 		NetworkStats m_Stats{};
 
 		std::array<Socket, SOCKET_COUNT> m_Socks; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
 		std::vector<std::byte> m_PacketBuffer;
-		ECS::World* m_callback;
+		std::vector<NetCommand> m_CommandBuffer;
 
 		std::vector<PendingPeer> m_PendingConnections;
 		std::map<uint32_t, Session> m_Sessions;
 
-		uint16_t m_MaxSessions{ 1 };
+		ECS::World* m_pWorld;
+
+		uint64_t m_NextTick{ 0 };
+
+		std::atomic_flag m_Running;
+		std::atomic_flag m_ShouldStop;
+
 		ReliabilityPolicy m_Policy{};
+		uint16_t m_MaxSessions{ 1 };
 	};
 }
