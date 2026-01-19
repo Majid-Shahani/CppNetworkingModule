@@ -44,6 +44,10 @@ project "Core"
 		{
 			"CL_Platform_Windows"
 		}
+		links
+		{
+			"winmm",
+		}
 	filter "system:linux"
 		defines
 		{

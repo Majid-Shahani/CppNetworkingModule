@@ -18,7 +18,8 @@ namespace {
 }
 
 namespace Carnival::Network {
-	NetworkManager::NetworkManager(ECS::World* pWorld, const SocketData& sockData, uint16_t maxSessions)
+	NetworkManager::NetworkManager(ECS::World* pWorld,
+		const SocketData& sockData, uint16_t maxSessions)
 		: m_pWorld{ pWorld }, m_MaxSessions{ maxSessions }
 	{
 		for (auto& sock : m_Socks) {
@@ -29,6 +30,8 @@ namespace Carnival::Network {
 			sock.bindSocket();
 		}
 		m_PacketBuffer.reserve(PACKET_MTU);
+		m_CommandBuffer.reserve(35);
+		m_PendingConnections.reserve((m_MaxSessions > 32 ? 32 : m_MaxSessions));
 	}
 
 	uint64_t NetworkManager::getTime() noexcept
@@ -37,11 +40,25 @@ namespace Carnival::Network {
 		return (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
 	}
 
-	void NetworkManager::pollOngoing()
+	void NetworkManager::maintainSessions()
 	{
 		
 	}
-	void NetworkManager::pollIncoming()
+	void NetworkManager::opportunisticReceive()
+	{
+		while (true) {
+			uint64_t now{ getTime() };
+			if (now >= m_NextTick) return;
+			uint64_t remainingTimeUs = m_NextTick - now;
+			if (remainingTimeUs <= 1500) return;
+
+			uint8_t res{ Socket::waitForPackets(static_cast<int32_t>(remainingTimeUs / 1000),
+				m_Socks[0].getHandle(), m_Socks[1].getHandle()) };
+
+			if (res && !(res & (1 << 3))) collectIncoming();
+		}
+	}
+	void NetworkManager::collectIncoming()
 	{
 		// Reliable
 		while (m_Socks[1].hasPacket()) {
@@ -68,39 +85,98 @@ namespace Carnival::Network {
 			}
 		}
 	}
-	void NetworkManager::pollOutgoing()
+	void NetworkManager::processCommands()
 	{
-		// To be Implemented
+		for (auto& cmd : m_CommandBuffer) {
+			auto channel{ cmd.type & CHANNEL_MASK };
+			auto type{ cmd.type & TYPE_MASK };
+
+			if (channel & PacketFlags::RELIABLE) {
+				switch (type) {
+				case PacketFlags::CONNECTION_REQUEST:
+					if (cmd.type & PacketFlags::FRAGMENT) break;
+					sendRequest(cmd.ep.endpoint.addr, cmd.ep.endpoint.port);
+					break;
+
+				case PacketFlags::CONNECTION_ACCEPT:
+					if (cmd.type & PacketFlags::FRAGMENT) break;
+					sendAccept(cmd.sessionID, *cmd.ep.sesh);
+					break;
+
+				case PacketFlags::CONNECTION_REJECT:
+					if (cmd.type & PacketFlags::FRAGMENT) break;
+					sendReject(cmd.ep.endpoint.addr, cmd.ep.endpoint.port);
+					break;
+
+				default:
+					break;
+				}
+			}
+			else if (channel & PacketFlags::UNRELIABLE) {
+
+			}
+			else {
+				// snapshot
+			}
+		}
+		m_CommandBuffer.clear();
 	}
 
 	void NetworkManager::run(uint16_t tickRate)
 	{
+		// temp
+		attemptConnect({ (127 << 24) | 1 }, m_Socks[1].getPort());
+
+		//
 		CL_CORE_ASSERT(tickRate && ((tickRate & (tickRate - 1)) == 0), "TickRate should be a power of two");
+		CL_CORE_ASSERT(tickRate < 1024, "Windows Timer granularity is 1ms, 1024hz breaks sleep");
 		m_Running.test_and_set(std::memory_order::release);
 		m_Running.notify_all();
 
+		uint32_t tickCounter{};
 		const uint32_t tickDiffUs{ 1'000'000ul >> std::countr_zero(tickRate) };
-		const uint32_t remainder{ 1'000'000ul & (tickRate - 1) };
+		const uint32_t remainder{ 1'000'000ul & (tickRate - 1)};
 		uint32_t frac{};
 		m_NextTick = getTime() + tickDiffUs;
 
 		while (!m_ShouldStop.test(std::memory_order::acquire)) {
-			pollOngoing();
-			//pollIncoming();
-			pollOutgoing();
+			collectIncoming();
+			maintainSessions();
+			opportunisticReceive();
+			processCommands();
 
+			// Less than 1ms Busy wait
+			uint64_t now = getTime();
+			while (now < m_NextTick) {
+				SpinPause();
+				now = getTime();
+			}
+
+			// Advance Tick
 			m_NextTick += tickDiffUs;
 			frac += remainder;
-			if (frac >= tickRate) {
+			while (now >= m_NextTick) {
+				m_NextTick += tickDiffUs;
+				frac += remainder;
+			}
+			while (frac >= tickRate) {
 				m_NextTick++;
 				frac -= tickRate;
+			}
+
+			tickCounter++;
+			tickCounter = tickCounter & (tickRate - 1);
+			if (tickCounter == 0) {
+				std::print("Net Stats:\n  Packets:\n    Sent: {}\n    Received: {}\n    Dropped: {}\n",
+					m_Stats.packetsSent, m_Stats.packetsReceived, m_Stats.packetsDropped);
+				std::print("  Bytes:\n    Sent: {}\n    Received: {}\n",
+					m_Stats.bytesSent, m_Stats.bytesReceived);
 			}
 		}
 		m_NextTick = 0;
 		m_Running.clear(std::memory_order::release);
 		m_Running.notify_all();
 	}
-
 	void NetworkManager::stop()
 	{
 		m_Running.wait(false, std::memory_order::acquire);
@@ -248,7 +324,7 @@ namespace Carnival::Network {
 		return true;
 	}
 
-	bool NetworkManager::handleReliablePacket(const PacketInfo info)
+	inline bool NetworkManager::handleReliablePacket(const PacketInfo info)
 	{
 		HeaderInfo header{ parseHeader() };
 		uint32_t payloadSize{ static_cast<uint32_t>(m_PacketBuffer.size() - header.offset) };
@@ -283,7 +359,7 @@ namespace Carnival::Network {
 
 		return true;
 	}
-	bool NetworkManager::handleUnreliablePacket(const PacketInfo info)
+	inline bool NetworkManager::handleUnreliablePacket(const PacketInfo info)
 	{
 		HeaderInfo header{ parseHeader() };
 		uint32_t payloadSize{ static_cast<uint32_t>(m_PacketBuffer.size() - header.offset) };
@@ -303,7 +379,7 @@ namespace Carnival::Network {
 		return true;
 	}
 
-	void NetworkManager::handleConnectionRequest(PacketInfo info, const HeaderInfo& header)
+	inline void NetworkManager::handleConnectionRequest(PacketInfo info, const HeaderInfo& header)
 	{
 		// check existing sessions
 		if (header.sessionID != 0) {
@@ -374,11 +450,12 @@ namespace Carnival::Network {
 		uint32_t ID{ createSession(peer) };
 		acceptConnection(ID);
 	}
-	bool NetworkManager::handleConnectionAccept(const PacketInfo packet, const HeaderInfo& header)
+	inline bool NetworkManager::handleConnectionAccept(const PacketInfo packet, const HeaderInfo& header)
 	{
 		if (!header.sessionID) return false;
 		
 		if (m_Sessions.contains(header.sessionID)) {
+			std::print("Session {} Found.\n", header.sessionID);
 			auto& sesh{ m_Sessions.at(header.sessionID) };
 			if (sesh.endpoint[1].state == ConnectionState::DISCONNECTED ||
 				sesh.endpoint[1].state == ConnectionState::DROPPING) return true;
@@ -389,17 +466,19 @@ namespace Carnival::Network {
 
 		for (auto& pending : m_PendingConnections) {
 			if (pending.addr == packet.fromAddr && pending.port == packet.fromPort) {
+				std::print("Peer found! creating session {}\n", header.sessionID);
 				if (createSession(pending, header.sessionID))
 					return true;
 				else { // ID collision
 					std::print("ID Collision when creating session from connectionAccept: {}", header.sessionID);
-					return true;				}
+					return true;
+				}
 			}
 		}
 
 		return false;
 	}
-	bool NetworkManager::handleConnectionReject(const PacketInfo packet, const HeaderInfo& header)
+	inline bool NetworkManager::handleConnectionReject(const PacketInfo packet, const HeaderInfo& header)
 	{
 		for (auto it = m_PendingConnections.begin(); it != m_PendingConnections.end(); it++) {
 			if (it->addr == packet.fromAddr && it->port == packet.fromPort) {
@@ -436,7 +515,7 @@ namespace Carnival::Network {
 		return true;
 	}
 
-	void NetworkManager::sendRequest(ipv4_addr addr, uint16_t port) noexcept
+	inline void NetworkManager::sendRequest(ipv4_addr addr, uint16_t port) noexcept
 	{
 		m_PacketBuffer.clear();
 		HeaderInfo info{
@@ -446,7 +525,7 @@ namespace Carnival::Network {
 		writeHeader(info);
 		sendReliable(addr, port);
 	}
-	void NetworkManager::sendAccept(uint32_t sessionID, Session& sesh) noexcept
+	inline void NetworkManager::sendAccept(uint32_t sessionID, Session& sesh) noexcept
 	{
 		m_PacketBuffer.clear();
 
@@ -464,7 +543,7 @@ namespace Carnival::Network {
 		writeHeader(info);
 		sendReliable(sesh.endpoint[1]);
 	}
-	void NetworkManager::sendReject(ipv4_addr addr, uint16_t port) noexcept
+	inline void NetworkManager::sendReject(ipv4_addr addr, uint16_t port) noexcept
 	{
 		m_PacketBuffer.clear();
 		HeaderInfo info{
@@ -475,7 +554,7 @@ namespace Carnival::Network {
 		sendReliable(addr, port);
 	}
 
-	bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port) noexcept
+	inline bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port) noexcept
 	{
 		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, addr, port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
@@ -485,7 +564,7 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
-	bool NetworkManager::sendReliable(Endpoint& ep) noexcept
+	inline bool NetworkManager::sendReliable(Endpoint& ep) noexcept
 	{
 		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, ep.addr, ep.port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
@@ -496,7 +575,7 @@ namespace Carnival::Network {
 		return false;
 	}
 
-	bool NetworkManager::sendUnreliable(ipv4_addr addr, uint16_t port) noexcept
+	inline bool NetworkManager::sendUnreliable(ipv4_addr addr, uint16_t port) noexcept
 	{
 		if (auto res{ m_Socks[0].sendPackets(m_PacketBuffer, addr, port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
@@ -506,7 +585,7 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
-	bool NetworkManager::sendUnreliable(Endpoint& ep) noexcept
+	inline bool NetworkManager::sendUnreliable(Endpoint& ep) noexcept
 	{
 		if (auto res{ m_Socks[0].sendPackets(m_PacketBuffer, ep.addr, ep.port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();

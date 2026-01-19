@@ -13,6 +13,8 @@ namespace Carnival::Network {
 		Socket(const SocketData& initData) noexcept;
 		~Socket() noexcept;
 
+		static uint8_t waitForPackets(int32_t timeout, uint64_t handle1, uint64_t handle2) noexcept;
+
 		//multiple sockets for same IP/Port not allowed
 		Socket(const Socket&)				= delete;
 		Socket& operator=(const Socket&)	= delete;
@@ -47,6 +49,10 @@ namespace Carnival::Network {
 		ipv4_addr getAddr() const noexcept {
 			if (isBound()) return m_InAddress;
 			else return ipv4_addr{}; 
+		}
+		uint64_t getHandle() const noexcept { 
+			if (isOpen()) return m_Handle;
+			else return 0;
 		}
 	private:
 		// Host Byte Order for Address and Port

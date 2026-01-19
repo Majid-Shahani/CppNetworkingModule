@@ -34,7 +34,8 @@ project "App"
 		}
 		links
 		{
-			"Ws2_32.lib"
+			"Ws2_32.lib",
+			"winmm",
 		}
 	filter "system:linux"
 		defines

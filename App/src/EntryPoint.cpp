@@ -5,6 +5,11 @@
 #include <thread>
 #include <chrono>
 
+#ifdef CL_Platform_Windows
+#include <Windows.h>
+#include <mmsystem.h>
+#endif
+
 using namespace Carnival;
 using namespace utils;
 using namespace Network;
@@ -52,12 +57,13 @@ void PositionMoverSystem(World& w, float delta) {
 	
 	for (auto it = query.begin(); it != query.end(); ++it) {
 		it.write().x = it.read().x + delta;
-
-		//std::print("Value: {}\n", it.read().x);
 	}
 }
 
 int main() {
+#ifdef CL_Platform_Windows
+	timeBeginPeriod(1);
+#endif
 	// =========================================== INIT ECS ========================================= //
 	std::unique_ptr<World> w{ std::make_unique<World>() };
 	w->registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
@@ -74,7 +80,7 @@ int main() {
 	};
 	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(), sock, 64) };
 	std::jthread netRun{ [&]() {
-		netMan->run(128);
+		netMan->run(512);
 	} };
 
 	// =========================================== Main Loop ========================================= //
@@ -83,9 +89,13 @@ int main() {
 	PositionMoverSystem(*w, 1);
 	w->endUpdate();
 	// ============================================ CLEANUP =========================================== //
+	std::this_thread::sleep_for(5s);
 	netMan->stop();
 	netRun.join();
 
+#ifdef CL_Platform_Windows
+	timeEndPeriod(1);
+#endif
 	/*
 	* client code :
 	*   request connection

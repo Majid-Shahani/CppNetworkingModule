@@ -46,6 +46,25 @@ namespace Carnival::Network {
 			winsockState = WSAState::UNINITIALIZED;
 		}
 	}
+	uint8_t Socket::waitForPackets(int32_t timeout, uint64_t handle1, uint64_t handle2) noexcept
+	{
+		WSAPOLLFD fds[2];
+		fds[0] = { handle1, POLLRDNORM, 0 };
+		fds[1] = { handle2, POLLRDNORM, 0 };
+
+		uint8_t res{};
+
+		int ready = WSAPoll(fds, 2, timeout);
+		if (ready == SOCKET_ERROR) {
+			std::print("Socket Error: {}", WSAGetLastError());
+			res |= (1 << 3);
+		}
+		else if (ready > 0) {
+			if (fds[0].revents & POLLRDNORM) res |= 1 << 1;
+			if (fds[1].revents & POLLRDNORM) res |= 1 << 2;
+		}
+		return res;
+	}
 	Socket::Socket(Socket&& other) noexcept
 		: m_Handle{ other.m_Handle },
 		m_InAddress{ other.m_InAddress },

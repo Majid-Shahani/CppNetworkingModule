@@ -32,10 +32,10 @@ namespace Carnival::Network {
 	private:
 		static uint64_t getTime() noexcept;
 
-		bool sendReliable(ipv4_addr addr, uint16_t port) noexcept;
-		bool sendReliable(Endpoint& ep) noexcept;
-		bool sendUnreliable(ipv4_addr addr, uint16_t port) noexcept;
-		bool sendUnreliable(Endpoint& ep) noexcept;
+		inline bool sendReliable(ipv4_addr addr, uint16_t port) noexcept;
+		inline bool sendReliable(Endpoint& ep) noexcept;
+		inline bool sendUnreliable(ipv4_addr addr, uint16_t port) noexcept;
+		inline bool sendUnreliable(Endpoint& ep) noexcept;
 		// void sendSnapshot(ipv4_addr addr, uint16_t port);
 
 		void writeHeader(const HeaderInfo& header);
@@ -47,14 +47,14 @@ namespace Carnival::Network {
 			const uint16_t endpointIndex,
 			const uint16_t channelIndex);
 
-		bool handleReliablePacket(const PacketInfo);
-		bool handleUnreliablePacket(const PacketInfo);
+		inline bool handleReliablePacket(const PacketInfo);
+		inline bool handleUnreliablePacket(const PacketInfo);
 
-		void handleConnectionRequest(const PacketInfo, const HeaderInfo&);
-		bool handleConnectionAccept(const PacketInfo, const HeaderInfo&);
-		bool handleConnectionReject(const PacketInfo, const HeaderInfo&);
+		inline void handleConnectionRequest(const PacketInfo, const HeaderInfo&);
+		inline bool handleConnectionAccept(const PacketInfo, const HeaderInfo&);
+		inline bool handleConnectionReject(const PacketInfo, const HeaderInfo&);
 
-		void handlePayload(const PacketInfo, const HeaderInfo&);
+		inline void handlePayload(const PacketInfo, const HeaderInfo&);
 
 		uint32_t createSession(const PendingPeer& info);
 		bool createSession(const PendingPeer& info, uint32_t Key);
@@ -71,13 +71,14 @@ namespace Carnival::Network {
 				static_cast<PacketFlags>(PacketFlags::CONNECTION_ACCEPT | PacketFlags::RELIABLE));
 		}
 
-		void sendRequest(ipv4_addr addr, uint16_t port) noexcept;
-		void sendAccept(uint32_t sessionID, Session& sesh) noexcept;
-		void sendReject(ipv4_addr addr, uint16_t port) noexcept;
+		inline void sendRequest(ipv4_addr addr, uint16_t port) noexcept;
+		inline void sendAccept(uint32_t sessionID, Session& sesh) noexcept;
+		inline void sendReject(ipv4_addr addr, uint16_t port) noexcept;
 
-		void pollOngoing(); // book keeping and keep connections alive
-		void pollIncoming(); // receive waiting packets
-		void pollOutgoing(); // send waiting messages
+		void collectIncoming(); // receive waiting packets
+		void maintainSessions(); // book keeping and keep connections alive
+		void opportunisticReceive(); // Wait until next tick for new packets
+		void processCommands(); // send waiting messages
 	private:
 		NetworkStats m_Stats{};
 
