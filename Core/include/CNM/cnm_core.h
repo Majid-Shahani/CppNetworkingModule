@@ -152,6 +152,8 @@ namespace Carnival::Network {
 	struct Session {
 		std::array<Endpoint, SOCKET_COUNT>	endpoint; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
 		std::array<ChannelState, CHANNELS>	states; // 0 - Unreliable, 1 - Reliable Unordered, 2 - Snapshot
+
+		uint64_t graceTimer{};
 	};
 
 	//=========================================== Command ===================================//

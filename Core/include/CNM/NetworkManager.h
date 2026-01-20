@@ -84,6 +84,8 @@ namespace Carnival::Network {
 		void maintainSessions(); // book keeping and keep connections alive
 		void opportunisticReceive(); // Wait until next tick for new packets
 		void processCommands(); // send waiting messages
+
+		void cleanupSessions(); // delete dropping sessions
 	private:
 		NetworkStats m_Stats{};
 

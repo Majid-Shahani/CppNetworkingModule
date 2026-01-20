@@ -68,7 +68,8 @@ namespace Carnival::Network {
 		for (auto& [id, sesh] : m_Sessions) {
 			for (int i{}; i < sesh.endpoint.size(); i++) {
 				auto& ep = sesh.endpoint[i];
-				if (!(ep.state == ConnectionState::CONNECTED)) continue;
+				if (ep.state == ConnectionState::DROPPING
+					|| ep.state == ConnectionState::TIMEOUT) continue;
 
 				if (now - ep.lastRecvTime > m_Policy.disconnect) {
 					ep.state = ConnectionState::TIMEOUT;
@@ -185,6 +186,31 @@ namespace Carnival::Network {
 		m_CommandBuffer.clear();
 	}
 
+	void NetworkManager::cleanupSessions()
+	{
+		uint64_t now{ getTime() };
+		for (auto it{ m_Sessions.begin() }; it != m_Sessions.end();) {
+			auto& sesh{ it->second };
+			if (sesh.endpoint[EP_UNRELIABLE].state == ConnectionState::TIMEOUT
+				&& sesh.endpoint[EP_RELIABLE].state == ConnectionState::TIMEOUT) {
+				sesh.graceTimer = now;
+				sesh.endpoint[EP_RELIABLE].state = ConnectionState::DROPPING;
+				sesh.endpoint[EP_UNRELIABLE].state = ConnectionState::DROPPING;
+				std::print("Session {} is now Dropping!\n", it->first);
+			}
+			else if (sesh.endpoint[EP_UNRELIABLE].state == ConnectionState::DROPPING
+				&& sesh.endpoint[EP_RELIABLE].state == ConnectionState::DROPPING) {
+				if (now - sesh.graceTimer > m_Policy.disconnect) {
+					std::print("Session {} Disconnected!\n", it->first);
+					it = m_Sessions.erase(it);
+					continue;
+				}
+			}
+			else sesh.graceTimer = 0;
+			it++;
+		}
+	}
+
 	void NetworkManager::run(uint16_t tickRate)
 	{
 		CL_CORE_ASSERT(tickRate && ((tickRate & (tickRate - 1)) == 0), "TickRate should be a power of two");
@@ -203,8 +229,8 @@ namespace Carnival::Network {
 			tickCounter++;
 			tickCounter = tickCounter & (tickRate - 1);
 			if (tickCounter == 0) { // Run once a second
-				// cleanupDropping();
 				std::cout << "\033[2J\033[H" << std::flush;
+				cleanupSessions();
 				std::print("Net Stats:\n  Packets:\n    Sent: {}\n    Received: {}\n    Dropped: {}\n",
 					m_Stats.packetsSent, m_Stats.packetsReceived, m_Stats.packetsDropped);
 				std::print("  Bytes:\n    Sent: {}\n    Received: {}\n",
@@ -606,7 +632,7 @@ namespace Carnival::Network {
 		auto [it, inserted] = m_Sessions.try_emplace(key, Session{});
 		if (!inserted) return false;
 		Session& sesh = it->second;
-		auto& reliable_end = sesh.endpoint[1];
+		auto& reliable_end = sesh.endpoint[EP_RELIABLE];
 
 		reliable_end.addr = info.addr;
 		reliable_end.port = info.port;
@@ -614,7 +640,8 @@ namespace Carnival::Network {
 		reliable_end.lastRecvTime = getTime();
 		reliable_end.lastSentTime = info.lastSendTime;
 
-		sesh.endpoint[0].state = ConnectionState::CONNECTING;
+		sesh.endpoint[EP_UNRELIABLE].state = ConnectionState::CONNECTING;
+		sesh.endpoint[EP_UNRELIABLE].lastRecvTime = getTime();
 
 		return true;
 	}
