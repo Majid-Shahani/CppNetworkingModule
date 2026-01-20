@@ -50,7 +50,17 @@ namespace Carnival::Network {
 		ipv4_addr fromAddr{};
 		uint16_t fromPort{};
 	};
-
+	enum class PollResult : uint8_t {
+		None,
+		Packet,
+		Error,
+	};
+	enum class SocketError : uint8_t {
+		None,
+		Transient,
+		Remote,
+		Fatal
+	};
 	//===================================== PACKET HEADER ================================//
 
 	enum PacketFlags : uint8_t {

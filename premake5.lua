@@ -20,6 +20,7 @@ group "Core"
 group ""
 
 group "App"
-	include "App"
+	include "ServerApp"
+	include "ClientApp"
 group ""
 

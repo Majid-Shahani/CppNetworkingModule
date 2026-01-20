@@ -16,7 +16,9 @@ namespace Carnival::ECS {
 namespace Carnival::Network {
 	class NetworkManager {
 	public:		
-		NetworkManager(ECS::World* pWorld, const SocketData& sockData, uint16_t maxSessions);
+		NetworkManager(ECS::World* pWorld, 
+			const SocketData& relSockData, const SocketData& urelSockData, 
+			uint16_t maxSessions);
 		~NetworkManager() = default;
 
 		NetworkManager(const NetworkManager&)				= delete;
@@ -46,6 +48,9 @@ namespace Carnival::Network {
 
 		inline bool handleReliablePacket(const PacketInfo);
 		inline bool handleUnreliablePacket(const PacketInfo);
+
+		inline bool handleError();
+		inline bool handleError(Socket& sock);
 
 		inline void handleConnectionRequest(const PacketInfo, const HeaderInfo&);
 		inline bool handleConnectionAccept(const PacketInfo, const HeaderInfo&);

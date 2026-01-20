@@ -46,24 +46,23 @@ namespace Carnival::Network {
 			winsockState = WSAState::UNINITIALIZED;
 		}
 	}
-	uint8_t Socket::waitForPackets(int32_t timeout, uint64_t handle1, uint64_t handle2) noexcept
+	PollResult Socket::waitForPackets(int32_t timeout, uint64_t handle1, uint64_t handle2) noexcept
 	{
-		WSAPOLLFD fds[2];
-		fds[0] = { handle1, POLLRDNORM, 0 };
-		fds[1] = { handle2, POLLRDNORM, 0 };
+		CL_CORE_ASSERT(handle1 != INVALID_SOCKET
+			&& handle2 != INVALID_SOCKET, "Invalid Sockets!");
 
-		uint8_t res{};
+		WSAPOLLFD fds[2]{ { handle1, POLLRDNORM, 0 }, { handle2, POLLRDNORM, 0 } };
 
 		int ready = WSAPoll(fds, 2, timeout);
 		if (ready == SOCKET_ERROR) {
 			std::print("Socket Error: {}", WSAGetLastError());
-			res |= (1 << 3);
+			// handle error
+			return PollResult::Error;
 		}
-		else if (ready > 0) {
-			if (fds[0].revents & POLLRDNORM) res |= 1 << 1;
-			if (fds[1].revents & POLLRDNORM) res |= 1 << 2;
-		}
-		return res;
+		if (fds[0].revents & POLLERR || fds[1].revents & POLLERR) return PollResult::Error;
+		if (fds[0].revents & POLLRDNORM || fds[1].revents & POLLRDNORM) return PollResult::Packet;
+
+		return PollResult::None;
 	}
 	Socket::Socket(Socket&& other) noexcept
 		: m_Handle{ other.m_Handle },
@@ -191,28 +190,91 @@ namespace Carnival::Network {
 		else return true;
 	}
 
-	bool Socket::hasPacket() const noexcept {
+	PollResult Socket::poll() const noexcept {
 		WSAPOLLFD pfd{};
 		pfd.fd = m_Handle;
 		pfd.events = POLLRDNORM;
 		int ready = WSAPoll(&pfd, 1, 0);
-		return (ready > 0 && (pfd.revents & POLLRDNORM));
+
+		if (ready <= 0) return PollResult::None;
+		if (pfd.revents & POLLERR) return PollResult::Error;
+		if (pfd.revents & POLLRDNORM) return PollResult::Packet;
+
+		return PollResult::None;
 	}
-	PacketInfo Socket::receivePacket(std::vector<std::byte>& packet) const noexcept
+	PacketInfo Socket::receivePacket(std::vector<std::byte>& packet) noexcept
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Receiving Packets.");
 		CL_CORE_ASSERT(m_Handle != INVALID_SOCKET, "Socket must be open and bound before receiving packets.");
-		
+
 		sockaddr_in from{};
 		int fromLength = sizeof(from);
-		int size = static_cast<int>(packet.size());
+
 		packet.resize(PACKET_MTU);
 		int64_t bytes = recvfrom(m_Handle, reinterpret_cast<char*>(packet.data()),
 			static_cast<int>(PACKET_MTU), 0, (sockaddr*)&from, &fromLength);
-		packet.resize(size + bytes);
+		if (bytes >= 0) {
+			packet.resize(bytes);
+			return { ntohl(from.sin_addr.s_addr), ntohs(from.sin_port) };
+		}
 
-		return { ntohl(from.sin_addr.s_addr), ntohs(from.sin_port) };
+		int err{ WSAGetLastError() };
+		switch (err) {
+		case 0:
+		case WSAEWOULDBLOCK:
+		case WSAEINTR:
+			packet.clear();
+			return {};
+			break;
+
+		case WSAECONNREFUSED:
+		case WSAECONNRESET:
+		case WSAETIMEDOUT:
+			packet.clear();
+			break;
+		default:
+			m_Status = SocketStatus::SOCKERROR;
+			std::print("Sockerror: {}\n", WSAGetLastError());
+			CL_CORE_ASSERT(false, "Socket Error!");
+			//throw std::runtime_error("Fatal Socket Error");
+		}
+
+		return {};
+	}
+
+	SocketError Socket::pollError() noexcept
+	{
+		char dummy{};
+		sockaddr_in from{};
+		int fromLen{ sizeof(from) };
+
+		int ret = recvfrom(
+			m_Handle,
+			&dummy,
+			sizeof(dummy),
+			0,
+			reinterpret_cast<sockaddr*>(&from),
+			&fromLen
+		);
+
+		if (ret >= 0) return SocketError::None;
+		int err{ WSAGetLastError() };
+
+		switch (err) {
+		case 0:
+		case WSAEWOULDBLOCK:
+		case WSAEINTR:
+			return SocketError::Transient;
+			break;
+
+		case WSAECONNREFUSED:
+		case WSAETIMEDOUT:
+			return SocketError::Remote;
+			break;
+		default:
+			return SocketError::Fatal;
+		}
 	}
 
 	void Socket::setNonBlocking(bool nb) {

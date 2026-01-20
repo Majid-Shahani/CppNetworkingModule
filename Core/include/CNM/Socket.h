@@ -13,7 +13,7 @@ namespace Carnival::Network {
 		Socket(const SocketData& initData) noexcept;
 		~Socket() noexcept;
 
-		static uint8_t waitForPackets(int32_t timeout, uint64_t handle1, uint64_t handle2) noexcept;
+		static PollResult waitForPackets(int32_t timeout, uint64_t handle1, uint64_t handle2) noexcept;
 
 		//multiple sockets for same IP/Port not allowed
 		Socket(const Socket&)				= delete;
@@ -28,8 +28,9 @@ namespace Carnival::Network {
 		bool bindSocket();
 		bool sendPackets(std::span<const std::byte> packet, const ipv4_addr outAddr, uint16_t port = 0) const noexcept;
 
-		bool hasPacket() const noexcept;
-		PacketInfo receivePacket(std::vector<std::byte>& packet) const noexcept;
+		PollResult poll() const noexcept;
+		PacketInfo receivePacket(std::vector<std::byte>& packet) noexcept;
+		SocketError pollError() noexcept;
 
 		// Status Checking
 		bool isOpen() const	noexcept		{ return (m_Status & SocketStatus::OPEN); }

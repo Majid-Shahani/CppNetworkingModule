@@ -1,4 +1,4 @@
-project "App"
+project "ServerApp"
 	kind "ConsoleApp"
 	language "C++"
 	cppdialect "C++latest"

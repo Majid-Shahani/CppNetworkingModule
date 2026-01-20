@@ -52,11 +52,10 @@ struct Position {
 	}
 };
 
-void PositionMoverSystem(World& w, float delta) {
-	auto query = w.query<QueryPolicy::RW, Position>();
-	
-	for (auto it = query.begin(); it != query.end(); ++it) {
-		it.write().x = it.read().x + delta;
+void PositionReaderSystem(World& w, float delta) {
+	auto query = w.query<QueryPolicy::RO, Position>();
+	for (auto& P : query) {
+		std::print("X: {}, Y: {}, Z: {}\n", P.x, P.y, P.z);
 	}
 }
 
@@ -67,10 +66,6 @@ int main() {
 	// =========================================== INIT ECS ========================================= //
 	std::unique_ptr<World> w{ std::make_unique<World>() };
 	w->registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
-	Entity onTickEntity = w->createEntity<Position, OnTickNetworkComponent>();
-	Entity onUpdateEntity = w->createEntity<Position, OnUpdateNetworkComponent>();
-	w->removeComponentsFromEntity<OnUpdateNetworkComponent>(onUpdateEntity);
-	w->addComponentsToEntity<OnUpdateNetworkComponent>(onUpdateEntity);
 
 	// ========================================= INIT NETWORK ======================================= //
 	SocketData sock{
@@ -78,15 +73,23 @@ int main() {
 		.InPort = 0,
 		.status = SocketStatus::NONBLOCKING,
 	};
-	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(), sock, 64) };
+	SocketData sock2{
+		.InAddress = 127 << 24 | 1,
+		.InPort = 0,
+		.status = SocketStatus::NONBLOCKING,
+	};
+	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(),
+		sock, sock2, 1) };
 	std::jthread netRun{ [&]() {
-		netMan->run(512);
+		netMan->attemptConnect({ (127 << 24) | 1 }, 52000);
+		//netMan->attemptConnect({ (127 << 24) | 1 }, 52001);
+		netMan->run(64);
 	} };
 
 	// =========================================== Main Loop ========================================= //
 	// Entities Should be Marked Dirty and Replication Records Submitted IF onUpdate Networked
 	w->startUpdate();
-	PositionMoverSystem(*w, 1);
+	PositionReaderSystem(*w, 1);
 	w->endUpdate();
 	// ============================================ CLEANUP =========================================== //
 	std::this_thread::sleep_for(115s);
