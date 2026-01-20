@@ -25,7 +25,7 @@ namespace Carnival::Network {
 		NetworkManager& operator=(NetworkManager&&)			= delete;
 		
 		bool isRunning() { return m_Running.test(std::memory_order_acquire); }
-		void run(uint16_t tickRate); // Tickrate should be a power of two
+		void run(uint16_t tickRate); // Tickrate must be a power of two
 		void stop(); // blocking
 
 		void attemptConnect(ipv4_addr addr, uint16_t port);

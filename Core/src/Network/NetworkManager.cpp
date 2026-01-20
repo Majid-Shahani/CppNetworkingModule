@@ -42,7 +42,40 @@ namespace Carnival::Network {
 
 	void NetworkManager::maintainSessions()
 	{
-		
+		auto now = getTime();
+
+		// Retry Pending Connections
+		for (auto it{ m_PendingConnections.begin() }; it != m_PendingConnections.end();) {
+			if (now - it->lastSendTime > m_Policy.resendDelay) {
+				it->retryCount++;
+				if (it->retryCount > m_Policy.maxRetries) {
+					it = m_PendingConnections.erase(it);
+					continue;
+				}
+				m_CommandBuffer.emplace_back(it->addr, it->port,
+					static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE));
+				it->lastSendTime = now;
+			}
+			it++;
+		}
+
+		// Submit Heartbeats and Detect timeout
+		for (auto& [id, sesh] : m_Sessions) {
+			for (int i{}; i < sesh.endpoint.size(); i++) {
+				auto& ep = sesh.endpoint[i];
+				if (!(ep.state == ConnectionState::CONNECTED)) continue;
+
+				if (now - ep.lastRecvTime > m_Policy.disconnect) {
+					ep.state = ConnectionState::TIMEOUT;
+					break;
+				}
+
+				if (now - ep.lastSentTime > m_Policy.heartbeat) {
+					m_CommandBuffer.emplace_back(&sesh, id,
+						static_cast<PacketFlags>(PacketFlags::HEARTBEAT | (1 << (3 + i)) ));
+				}
+			}
+		}
 	}
 	void NetworkManager::opportunisticReceive()
 	{
@@ -140,8 +173,21 @@ namespace Carnival::Network {
 		m_NextTick = getTime() + tickDiffUs;
 
 		while (!m_ShouldStop.test(std::memory_order::acquire)) {
-			collectIncoming();
+			
+			tickCounter++;
+			tickCounter = tickCounter & (tickRate - 1);
+			if (tickCounter == 0) { // Run once a second
+				// cleanupDropping();
+
+				std::cout << "\033[2J\033[H" << std::flush;
+				std::print("Net Stats:\n  Packets:\n    Sent: {}\n    Received: {}\n    Dropped: {}\n",
+					m_Stats.packetsSent, m_Stats.packetsReceived, m_Stats.packetsDropped);
+				std::print("  Bytes:\n    Sent: {}\n    Received: {}\n",
+					m_Stats.bytesSent, m_Stats.bytesReceived);
+			}
+			
 			maintainSessions();
+			collectIncoming();
 			opportunisticReceive();
 			processCommands();
 
@@ -163,15 +209,6 @@ namespace Carnival::Network {
 				m_NextTick++;
 				frac -= tickRate;
 			}
-
-			tickCounter++;
-			tickCounter = tickCounter & (tickRate - 1);
-			if (tickCounter == 0) {
-				std::print("Net Stats:\n  Packets:\n    Sent: {}\n    Received: {}\n    Dropped: {}\n",
-					m_Stats.packetsSent, m_Stats.packetsReceived, m_Stats.packetsDropped);
-				std::print("  Bytes:\n    Sent: {}\n    Received: {}\n",
-					m_Stats.bytesSent, m_Stats.bytesReceived);
-			}
 		}
 		m_NextTick = 0;
 		m_Running.clear(std::memory_order::release);
@@ -187,7 +224,8 @@ namespace Carnival::Network {
 
 	void NetworkManager::attemptConnect(ipv4_addr addr, uint16_t port)
 	{	
-		m_CommandBuffer.emplace_back(addr, port, static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE));
+		m_CommandBuffer.emplace_back(addr,
+			port, static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE));
 
 		// Prevent duplicate peer creation
 		for (auto& p : m_PendingConnections) {
@@ -276,12 +314,12 @@ namespace Carnival::Network {
 		auto& ep = sesh.endpoint[endpointIndex];
 		const uint64_t now = getTime();
 
-		if (ep.state == ConnectionState::DISCONNECTED
-			|| ep.state == ConnectionState::DROPPING)
+		if (ep.state == ConnectionState::DROPPING)
 			return false;
 
 		// timeout not elapsed
-		if (now - ep.lastRecvTime > m_Policy.disconnect)
+		if (ep.state == ConnectionState::CONNECTED 
+			&& now - ep.lastRecvTime > m_Policy.disconnect)
 			return false;
 
 		// Sequence Must make sense
@@ -304,6 +342,7 @@ namespace Carnival::Network {
 
 			ep.addr = packet.fromAddr;
 			ep.port = packet.fromPort;
+			ep.state = ConnectionState::CONNECTED;
 		}
 		
 		if (header.seqNum >= state.lastReceived) {
@@ -387,7 +426,7 @@ namespace Carnival::Network {
 				auto& localEndPoint = it->second.endpoint[1];
 				auto state = localEndPoint.state;
 
-				if (state == ConnectionState::DROPPING || state == ConnectionState::DISCONNECTED) { 
+				if (state == ConnectionState::DROPPING) { 
 					rejectConnection(info.fromAddr, info.fromPort); 
 					return;
 				}
@@ -457,8 +496,7 @@ namespace Carnival::Network {
 		if (m_Sessions.contains(header.sessionID)) {
 			std::print("Session {} Found.\n", header.sessionID);
 			auto& sesh{ m_Sessions.at(header.sessionID) };
-			if (sesh.endpoint[1].state == ConnectionState::DISCONNECTED ||
-				sesh.endpoint[1].state == ConnectionState::DROPPING) return true;
+			if (sesh.endpoint[1].state == ConnectionState::DROPPING) return true;
 			if (updateSessionStats(sesh, packet, header, 1, 1))
 				return true;
 			else return false;

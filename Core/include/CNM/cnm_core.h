@@ -95,10 +95,10 @@ namespace Carnival::Network {
 	//======================================== Connection ================================//
 
 	enum class ConnectionState : uint8_t {
-		DISCONNECTED,
-		CONNECTING,
-		CONNECTED,
-		DROPPING,
+		CONNECTING, // Handshake not complete
+		CONNECTED, // Alive
+		DROPPING, // Explicit Teardown, Cannot Revive!
+		TIMEOUT, // Can Revive!
 	};
 	struct PendingPeer {
 		uint64_t	lastSendTime{}; // in MicroSecond
@@ -128,7 +128,7 @@ namespace Carnival::Network {
 		uint64_t	lastSentTime{}; // in MicroSecond
 		ipv4_addr	addr{};
 		uint16_t	port{};
-		ConnectionState state{ ConnectionState::DISCONNECTED };
+		ConnectionState state{ ConnectionState::CONNECTING };
 	};
 	struct Session {
 		std::array<Endpoint, SOCKET_COUNT>	endpoint; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
