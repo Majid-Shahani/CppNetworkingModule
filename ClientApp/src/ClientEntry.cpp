@@ -60,9 +60,16 @@ void PositionReaderSystem(World& w, float delta) {
 }
 
 int main() {
+
 #ifdef CL_Platform_Windows
 	timeBeginPeriod(1);
+	HANDLE hOut{ GetStdHandle(STD_OUTPUT_HANDLE) };
+	DWORD mode{ 0 };
+	GetConsoleMode(hOut, &mode);
+	mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	SetConsoleMode(hOut, mode);
 #endif
+
 	// =========================================== INIT ECS ========================================= //
 	std::unique_ptr<World> w{ std::make_unique<World>() };
 	w->registerComponents<Position, OnTickNetworkComponent, OnUpdateNetworkComponent>();
@@ -82,7 +89,6 @@ int main() {
 		sock, sock2, 1) };
 	std::jthread netRun{ [&]() {
 		netMan->attemptConnect({ (127 << 24) | 1 }, 52000);
-		//netMan->attemptConnect({ (127 << 24) | 1 }, 52001);
 		netMan->run(64);
 	} };
 
@@ -99,16 +105,5 @@ int main() {
 #ifdef CL_Platform_Windows
 	timeEndPeriod(1);
 #endif
-	/*
-	* client code :
-	*   request connection
-	*   wait for schema
-	*   make archetypes
-	*   fill in entities
-	*   simulate
-	*   send action deltas / receive state delta
-	*   update ecs
-	*   goto simulate until finished
-	*/
 	return 0;
 }

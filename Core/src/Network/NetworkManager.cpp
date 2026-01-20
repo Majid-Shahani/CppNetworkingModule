@@ -161,7 +161,7 @@ namespace Carnival::Network {
 					sendAccept(cmd.sessionID, *cmd.ep.sesh);
 					break;
 
-				case PacketFlags::CONNECTION_REJECT:
+				case CONNECTION_REJECT:
 					CL_CORE_ASSERT(!(cmd.type & FRAGMENT), "Connection reject has fragment bit!");
 					sendReject(cmd.ep.endpoint.addr, cmd.ep.endpoint.port);
 					break;
@@ -177,7 +177,12 @@ namespace Carnival::Network {
 				}
 			}
 			else if (channel & UNRELIABLE) {
-
+				switch (type) {
+				case HEARTBEAT:
+					CL_CORE_ASSERT(!(cmd.type & FRAGMENT), "heartbeat has fragment bit!");
+					sendHeartbeat(cmd.sessionID, *cmd.ep.sesh, EP_UNRELIABLE, CH_UNRELIABLE);
+					break;
+				}
 			}
 			else {
 				// snapshot
