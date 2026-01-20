@@ -120,29 +120,33 @@ namespace Carnival::Network {
 	}
 	void NetworkManager::processCommands()
 	{
-		// TODO: ADD SEND HEARTBEAT LOGIC
 		for (auto& cmd : m_CommandBuffer) {
 			auto channel{ cmd.type & CHANNEL_MASK };
 			auto type{ cmd.type & TYPE_MASK };
-
-			if (channel & PacketFlags::RELIABLE) {
+			if (channel & RELIABLE) {
 				switch (type) {
-				case PacketFlags::CONNECTION_REQUEST:
-					if (cmd.type & PacketFlags::FRAGMENT) break;
+				case CONNECTION_REQUEST:
+					CL_CORE_ASSERT(!(cmd.type & FRAGMENT), "Connection request has fragment bit!");
 					sendRequest(cmd.ep.endpoint.addr, cmd.ep.endpoint.port);
 					break;
 
-				case PacketFlags::CONNECTION_ACCEPT:
-					if (cmd.type & PacketFlags::FRAGMENT) break;
+				case CONNECTION_ACCEPT:
+					CL_CORE_ASSERT(!(cmd.type & FRAGMENT), "Connection accept has fragment bit!");
 					sendAccept(cmd.sessionID, *cmd.ep.sesh);
 					break;
 
 				case PacketFlags::CONNECTION_REJECT:
-					if (cmd.type & PacketFlags::FRAGMENT) break;
+					CL_CORE_ASSERT(!(cmd.type & FRAGMENT), "Connection reject has fragment bit!");
 					sendReject(cmd.ep.endpoint.addr, cmd.ep.endpoint.port);
 					break;
 
+				case HEARTBEAT:
+					CL_CORE_ASSERT(!(cmd.type & FRAGMENT), "heartbeat has fragment bit!");
+					sendHeartbeat(cmd.sessionID, *cmd.ep.sesh, EP_RELIABLE, CH_RELIABLE);
+					break;
+
 				default:
+					CL_CORE_ASSERT(false, "Wrong Packet type and channel combo command!");
 					break;
 				}
 			}
@@ -537,7 +541,9 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
-	inline bool NetworkManager::handleHeartbeat(const PacketInfo packet, const HeaderInfo& header, uint8_t Channel, uint8_t endpoint) {
+	inline bool NetworkManager::handleHeartbeat(const PacketInfo packet, const HeaderInfo& header,
+		uint8_t Channel, uint8_t endpoint) noexcept {
+
 		if (header.sessionID == 0) return false;
 		if (auto it{ m_Sessions.find(header.sessionID) }; it != m_Sessions.end()) {
 			if (it->second.endpoint[endpoint].state == ConnectionState::DROPPING) return true;
@@ -546,6 +552,7 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
+
 	uint32_t NetworkManager::createSession(const PendingPeer& info)
 	{
 		while (true) {
@@ -577,7 +584,7 @@ namespace Carnival::Network {
 		m_PacketBuffer.clear();
 		HeaderInfo info{
 			.protocol = HEADER_VERSION,
-			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_REQUEST | PacketFlags::RELIABLE),
+			.flags = static_cast<PacketFlags>(CONNECTION_REQUEST | RELIABLE),
 		};
 		writeHeader(info);
 		sendReliable(addr, port);
@@ -595,7 +602,7 @@ namespace Carnival::Network {
 			.ackField{sesh.states[1].sendingAckF},
 			.lastSeqRecv{sesh.states[1].lastReceived},
 			.sessionID{sessionID},
-			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_ACCEPT | PacketFlags::RELIABLE),
+			.flags = static_cast<PacketFlags>(CONNECTION_ACCEPT | RELIABLE),
 		};
 		writeHeader(info);
 		sendReliable(sesh.endpoint[1]);
@@ -605,10 +612,26 @@ namespace Carnival::Network {
 		m_PacketBuffer.clear();
 		HeaderInfo info{
 			.protocol = HEADER_VERSION,
-			.flags = static_cast<PacketFlags>(PacketFlags::CONNECTION_REJECT | PacketFlags::RELIABLE),
+			.flags = static_cast<PacketFlags>(CONNECTION_REJECT | RELIABLE),
 		};
 		writeHeader(info);
 		sendReliable(addr, port);
+	}
+
+	inline void NetworkManager::sendHeartbeat(uint32_t sessionID, Session& sesh, uint8_t ep, uint8_t ch) noexcept
+	{
+		m_PacketBuffer.clear();
+		HeaderInfo info{
+			.protocol{ HEADER_VERSION },
+			.seqNum{sesh.states[ch].lastSent++},
+			.ackField{sesh.states[ch].sendingAckF},
+			.lastSeqRecv{sesh.states[ch].lastReceived},
+			.sessionID{sessionID},
+			.flags{ static_cast<PacketFlags>(HEARTBEAT | (1 << (ch + 3))) },
+		};
+		writeHeader(info);
+		if (ep) sendReliable(sesh.endpoint[ep]);
+		else sendUnreliable(sesh.endpoint[ep]);
 	}
 
 	inline bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port) noexcept

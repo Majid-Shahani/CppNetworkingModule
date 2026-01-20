@@ -50,7 +50,7 @@ namespace Carnival::Network {
 		inline void handleConnectionRequest(const PacketInfo, const HeaderInfo&);
 		inline bool handleConnectionAccept(const PacketInfo, const HeaderInfo&);
 		inline bool handleConnectionReject(const PacketInfo, const HeaderInfo&);
-		inline bool handleHeartbeat(const PacketInfo, const HeaderInfo&, uint8_t Channel, uint8_t endpoint);
+		inline bool handleHeartbeat(const PacketInfo, const HeaderInfo&, uint8_t Channel, uint8_t endpoint) noexcept;
 		inline bool handlePayload(const PacketInfo, const HeaderInfo&, uint8_t Channel, uint8_t endpoint);
 
 		uint32_t createSession(const PendingPeer& info);
@@ -71,6 +71,9 @@ namespace Carnival::Network {
 		inline void sendRequest(ipv4_addr addr, uint16_t port) noexcept;
 		inline void sendAccept(uint32_t sessionID, Session& sesh) noexcept;
 		inline void sendReject(ipv4_addr addr, uint16_t port) noexcept;
+
+		inline void sendHeartbeat(uint32_t sessionID, Session& sesh,
+			uint8_t endpointIndex, uint8_t channelIndex) noexcept;
 
 		void collectIncoming(); // receive waiting packets
 		void maintainSessions(); // book keeping and keep connections alive
