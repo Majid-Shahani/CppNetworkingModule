@@ -5,7 +5,7 @@
 
 namespace {
 	constexpr uint8_t TYPE_MASK = 0b00000111;
-	constexpr int CHANNEL_MASK = Carnival::Network::PacketFlags::UNRELIABLE | 
+	constexpr uint8_t CHANNEL_MASK = Carnival::Network::PacketFlags::UNRELIABLE | 
 		Carnival::Network::PacketFlags::RELIABLE | 
 		Carnival::Network::PacketFlags::SNAPSHOT;
 
@@ -120,6 +120,7 @@ namespace Carnival::Network {
 	}
 	void NetworkManager::processCommands()
 	{
+		// TODO: ADD SEND HEARTBEAT LOGIC
 		for (auto& cmd : m_CommandBuffer) {
 			auto channel{ cmd.type & CHANNEL_MASK };
 			auto type{ cmd.type & TYPE_MASK };
@@ -307,8 +308,8 @@ namespace Carnival::Network {
 	bool NetworkManager::updateSessionStats(Session& sesh,
 		const PacketInfo packet,
 		const HeaderInfo& header,
-		const uint16_t endpointIndex,
-		const uint16_t channelIndex)
+		const uint8_t endpointIndex,
+		const uint8_t channelIndex)
 	{
 		auto& state = sesh.states[channelIndex];
 		auto& ep = sesh.endpoint[endpointIndex];
@@ -368,30 +369,40 @@ namespace Carnival::Network {
 		HeaderInfo header{ parseHeader() };
 		uint32_t payloadSize{ static_cast<uint32_t>(m_PacketBuffer.size() - header.offset) };
 
-		if (auto channel{ header.flags & CHANNEL_MASK }; channel != PacketFlags::RELIABLE)
-			return false;
+		uint8_t ep{ EP_RELIABLE };
+		uint8_t channel{ static_cast<uint8_t>(header.flags & CHANNEL_MASK) };
+		
+		if (channel != PacketFlags::RELIABLE) return false;
+		else channel = CH_RELIABLE;
 
 		// switch on flag
-		switch (auto type{ header.flags & TYPE_MASK }; type) {
-		case PacketFlags::INVALID:
+		switch (uint8_t type{ static_cast<uint8_t>(header.flags & TYPE_MASK) }; type) {
+		case INVALID:
 			return false;
 			break;
 
-		case PacketFlags::CONNECTION_REQUEST:
-			if (header.flags & PacketFlags::FRAGMENT) return false;
+		case CONNECTION_REQUEST:
+			if (header.flags & FRAGMENT) return false;
 			handleConnectionRequest(info, header);
 			break;
 
-		case PacketFlags::CONNECTION_ACCEPT:
-			if (header.flags & PacketFlags::FRAGMENT) return false;
+		case CONNECTION_ACCEPT:
+			if (header.flags & FRAGMENT) return false;
 			return handleConnectionAccept(info, header);
 			break;
 
-		case PacketFlags::CONNECTION_REJECT:
-			if (header.flags & PacketFlags::FRAGMENT) return false;
+		case CONNECTION_REJECT:
+			if (header.flags & FRAGMENT) return false;
 			return handleConnectionReject(info, header);
 			break;
 
+		case HEARTBEAT:
+			return handleHeartbeat(info, header, channel, ep);
+			break;
+
+		case EVENT_LOAD:
+		case STATE_LOAD:
+			return handlePayload(info, header, channel, ep);
 		default:
 			return false;
 		}
@@ -403,11 +414,14 @@ namespace Carnival::Network {
 		HeaderInfo header{ parseHeader() };
 		uint32_t payloadSize{ static_cast<uint32_t>(m_PacketBuffer.size() - header.offset) };
 
-		if (auto channel{ header.flags & CHANNEL_MASK }; channel != PacketFlags::UNRELIABLE)
+		uint8_t channel{ static_cast<uint8_t>(header.flags & CHANNEL_MASK) };
+		if (channel != UNRELIABLE)
 			return false;
+		channel = CH_UNRELIABLE;
+		uint8_t endpoint = EP_UNRELIABLE;
 
-		switch (auto type{ header.flags & TYPE_MASK }; type) {
-		case PacketFlags::INVALID:
+		switch (uint8_t type{ static_cast<uint8_t>(header.flags & TYPE_MASK) }; type) {
+		case INVALID:
 			return false;
 			break;
 
@@ -418,7 +432,7 @@ namespace Carnival::Network {
 		return true;
 	}
 
-	inline void NetworkManager::handleConnectionRequest(PacketInfo info, const HeaderInfo& header)
+	inline void NetworkManager::handleConnectionRequest(const PacketInfo info, const HeaderInfo& header)
 	{
 		// check existing sessions
 		if (header.sessionID != 0) {
@@ -435,7 +449,7 @@ namespace Carnival::Network {
 					acceptConnection(it->first);
 					return;
 				}
-				if (updateSessionStats(it->second, info, header, 1, 1))	acceptConnection(it->first);
+				if (updateSessionStats(it->second, info, header, EP_RELIABLE, CH_RELIABLE))	acceptConnection(it->first);
 				else rejectConnection(info.fromAddr, info.fromPort);
 			}
 			else	rejectConnection(info.fromAddr, info.fromPort);
@@ -492,12 +506,12 @@ namespace Carnival::Network {
 	inline bool NetworkManager::handleConnectionAccept(const PacketInfo packet, const HeaderInfo& header)
 	{
 		if (!header.sessionID) return false;
-		
-		if (m_Sessions.contains(header.sessionID)) {
+
+		if (auto it = m_Sessions.find(header.sessionID); it != m_Sessions.end()) {
 			std::print("Session {} Found.\n", header.sessionID);
-			auto& sesh{ m_Sessions.at(header.sessionID) };
-			if (sesh.endpoint[1].state == ConnectionState::DROPPING) return true;
-			if (updateSessionStats(sesh, packet, header, 1, 1))
+			auto& sesh{ it->second };
+			if (sesh.endpoint[EP_RELIABLE].state == ConnectionState::DROPPING) return true;
+			if (updateSessionStats(sesh, packet, header, EP_RELIABLE, CH_RELIABLE))
 				return true;
 			else return false;
 		}
@@ -526,7 +540,14 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
-
+	inline bool NetworkManager::handleHeartbeat(const PacketInfo packet, const HeaderInfo& header, uint8_t Channel, uint8_t endpoint) {
+		
+		if (header.sessionID == 0) return false;
+		if (auto it{ m_Sessions.find(header.sessionID) }; it != m_Sessions.end()) {
+			
+		}
+		return false;
+	}
 	uint32_t NetworkManager::createSession(const PendingPeer& info)
 	{
 		while (true) {
@@ -635,8 +656,9 @@ namespace Carnival::Network {
 	}
 
 
-	void NetworkManager::handlePayload(PacketInfo info, const HeaderInfo& header)
+	bool NetworkManager::handlePayload(PacketInfo info, const HeaderInfo& header, uint8_t Channel, uint8_t endpoint)
 	{
+		return false;
 	}
 
 	/*

@@ -9,7 +9,16 @@ namespace Carnival::Network {
 	static constexpr uint32_t	HEADER_VERSION	= utils::fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
 	static constexpr uint8_t	CHANNELS		= 3; // 0 - Unreliable, 1 - Reliable, 2 - Snapshot
 	static constexpr uint8_t	SOCKET_COUNT	= CHANNELS - 1; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
-
+	
+	enum CH : uint8_t {
+		CH_UNRELIABLE = 0,
+		CH_RELIABLE = 1,
+		CH_SNAPSHOT = 2,
+	};
+	enum EP : uint8_t {
+		EP_UNRELIABLE = 0,
+		EP_RELIABLE = 1,
+	};
 	// Address will be set in host byte order after call to bind / send
 	enum SocketStatus : uint8_t {
 		NONE			= 0,		// uninitialized or closed

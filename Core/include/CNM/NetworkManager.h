@@ -44,8 +44,8 @@ namespace Carnival::Network {
 		bool updateSessionStats(Session& sesh, 
 			const PacketInfo packet,
 			const HeaderInfo& header,
-			const uint16_t endpointIndex,
-			const uint16_t channelIndex);
+			const uint8_t endpointIndex,
+			const uint8_t channelIndex);
 
 		inline bool handleReliablePacket(const PacketInfo);
 		inline bool handleUnreliablePacket(const PacketInfo);
@@ -53,8 +53,8 @@ namespace Carnival::Network {
 		inline void handleConnectionRequest(const PacketInfo, const HeaderInfo&);
 		inline bool handleConnectionAccept(const PacketInfo, const HeaderInfo&);
 		inline bool handleConnectionReject(const PacketInfo, const HeaderInfo&);
-
-		inline void handlePayload(const PacketInfo, const HeaderInfo&);
+		inline bool handleHeartbeat(const PacketInfo, const HeaderInfo&, uint8_t Channel, uint8_t endpoint);
+		inline bool handlePayload(const PacketInfo, const HeaderInfo&, uint8_t Channel, uint8_t endpoint);
 
 		uint32_t createSession(const PendingPeer& info);
 		bool createSession(const PendingPeer& info, uint32_t Key);
