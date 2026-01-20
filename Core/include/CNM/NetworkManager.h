@@ -41,11 +41,8 @@ namespace Carnival::Network {
 		void writeHeader(const HeaderInfo& header);
 		HeaderInfo parseHeader();
 		
-		bool updateSessionStats(Session& sesh, 
-			const PacketInfo packet,
-			const HeaderInfo& header,
-			const uint8_t endpointIndex,
-			const uint8_t channelIndex);
+		bool updateSessionStats(const PacketInfo packet, const HeaderInfo& header,
+			Endpoint& ep, ChannelState& state);
 
 		inline bool handleReliablePacket(const PacketInfo);
 		inline bool handleUnreliablePacket(const PacketInfo);

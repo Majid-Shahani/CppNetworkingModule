@@ -305,14 +305,10 @@ namespace Carnival::Network {
 		return info;
 	}
 
-	bool NetworkManager::updateSessionStats(Session& sesh,
-		const PacketInfo packet,
+	bool NetworkManager::updateSessionStats(const PacketInfo packet, 
 		const HeaderInfo& header,
-		const uint8_t endpointIndex,
-		const uint8_t channelIndex)
+		Endpoint& ep, ChannelState& state)
 	{
-		auto& state = sesh.states[channelIndex];
-		auto& ep = sesh.endpoint[endpointIndex];
 		const uint64_t now = getTime();
 
 		if (ep.state == ConnectionState::DROPPING)
@@ -397,6 +393,7 @@ namespace Carnival::Network {
 			break;
 
 		case HEARTBEAT:
+			if (header.flags & FRAGMENT) return false;
 			return handleHeartbeat(info, header, channel, ep);
 			break;
 
@@ -449,7 +446,8 @@ namespace Carnival::Network {
 					acceptConnection(it->first);
 					return;
 				}
-				if (updateSessionStats(it->second, info, header, EP_RELIABLE, CH_RELIABLE))	acceptConnection(it->first);
+				if (updateSessionStats(info, header, 
+					it->second.endpoint[EP_RELIABLE], it->second.states[CH_RELIABLE]))	acceptConnection(it->first);
 				else rejectConnection(info.fromAddr, info.fromPort);
 			}
 			else	rejectConnection(info.fromAddr, info.fromPort);
@@ -511,9 +509,8 @@ namespace Carnival::Network {
 			std::print("Session {} Found.\n", header.sessionID);
 			auto& sesh{ it->second };
 			if (sesh.endpoint[EP_RELIABLE].state == ConnectionState::DROPPING) return true;
-			if (updateSessionStats(sesh, packet, header, EP_RELIABLE, CH_RELIABLE))
-				return true;
-			else return false;
+			return updateSessionStats(packet, header,
+				sesh.endpoint[EP_RELIABLE], sesh.states[CH_RELIABLE]);
 		}
 
 		for (auto& pending : m_PendingConnections) {
@@ -541,10 +538,11 @@ namespace Carnival::Network {
 		return false;
 	}
 	inline bool NetworkManager::handleHeartbeat(const PacketInfo packet, const HeaderInfo& header, uint8_t Channel, uint8_t endpoint) {
-		
 		if (header.sessionID == 0) return false;
 		if (auto it{ m_Sessions.find(header.sessionID) }; it != m_Sessions.end()) {
-			
+			if (it->second.endpoint[endpoint].state == ConnectionState::DROPPING) return true;
+			return updateSessionStats(packet, header,
+				it->second.endpoint[endpoint], it->second.states[Channel]);
 		}
 		return false;
 	}
