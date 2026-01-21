@@ -158,6 +158,12 @@ namespace Carnival::Network {
 	{
 		auto now = Engine::getTime();
 		for (auto it{ m_ResendBuffer.begin() }; it != m_ResendBuffer.end();) {
+			if (!m_Sessions.contains(it->sessionID) 
+				|| (it->resendCount >= m_Policy.maxRetries)) {
+				it = m_ResendBuffer.erase(it);
+				continue;
+			}
+
 			auto& state = it->sesh->states[CH_RELIABLE];
 			// Check for Ack
 			if (!it->Acked) {
@@ -841,6 +847,7 @@ namespace Carnival::Network {
 		auto res{ m_Socks[EP_RELIABLE].sendPacket(packet.pData.get(), packet.size,
 			packet.sesh->endpoint[EP_RELIABLE].addr, packet.sesh->endpoint[EP_RELIABLE].port) };
 		if (res) {
+			packet.resendCount++;
 			m_Stats.bytesSent += packet.size;
 			m_Stats.packetsSent++;
 			packet.sesh->endpoint[EP_RELIABLE].lastSentTime = Engine::getTime();
@@ -876,7 +883,11 @@ namespace Carnival::Network {
 		uint8_t Channel, uint8_t endpoint)
 	{
 		if (auto it = m_Sessions.find(header.sessionID); it != m_Sessions.end()) {
+			if (it->second.endpoint[endpoint].state == ConnectionState::DROPPING) return true;
 			updateSessionStats(info, header, it->second.endpoint[endpoint], it->second.states[Channel]);
+			uint32_t load{};
+			std::memcpy(&load, m_PacketBuffer.data() + header.offset, 4);
+			//std::print("Received number: {}\n", load);
 			return true;
 		}
 		return false;
