@@ -3,6 +3,7 @@
 #include <string_view>
 #include <array>
 #include <vector>
+#include <deque>
 // CNM
 #include <CNM/cnm_core.h>
 #include <CNM/utils.h>
@@ -42,6 +43,8 @@ namespace Carnival::Network {
 		// void sendSnapshot(ipv4_addr addr, uint16_t port);
 
 		void writeHeader(const HeaderInfo& header);
+		// returns bytes written
+		uint64_t writeHeader(void* pData, const HeaderInfo& header);
 		HeaderInfo parseHeader();
 		
 		// Validate sequence numbers, update ACK, NAT handling
@@ -58,7 +61,8 @@ namespace Carnival::Network {
 		inline bool handleConnectionAccept(const PacketInfo, const HeaderInfo&);
 		inline bool handleConnectionReject(const PacketInfo, const HeaderInfo&);
 		inline bool handleHeartbeat(const PacketInfo, const HeaderInfo&, uint8_t Channel, uint8_t endpoint) noexcept;
-		inline bool handlePayload(const PacketInfo, const HeaderInfo&, uint8_t Channel, uint8_t endpoint);
+		inline bool handlePayload(const PacketInfo, const HeaderInfo&,
+			const uint64_t payloadSize, uint8_t Channel, uint8_t endpoint);
 
 		uint32_t createSession(const PendingPeer& info);
 		bool createSession(const PendingPeer& info, uint32_t Key);
@@ -75,6 +79,8 @@ namespace Carnival::Network {
 				static_cast<PacketFlags>(PacketFlags::CONNECTION_ACCEPT | PacketFlags::RELIABLE));
 		}
 
+		void queueReliablePayload(uint32_t id, Session&);
+
 		inline void sendRequest(ipv4_addr addr, uint16_t port) noexcept;
 		inline void sendAccept(uint32_t sessionID, Session& sesh) noexcept;
 		inline void sendReject(ipv4_addr addr, uint16_t port) noexcept;
@@ -83,6 +89,7 @@ namespace Carnival::Network {
 			uint8_t endpointIndex, uint8_t channelIndex) noexcept;
 
 		void collectIncoming(); // pull packets from sockets
+		void queueResends(); // Check Reliable Arena, resend if needed
 		void maintainSessions(); // retry pending, send heartbeat, check timeouts
 		void opportunisticReceive(); // Wait until next tick for new packets
 		void processCommands(); // send queued messages
@@ -95,6 +102,7 @@ namespace Carnival::Network {
 		std::array<Socket, SOCKET_COUNT> m_Socks; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
 		std::vector<std::byte> m_PacketBuffer;
 		std::vector<NetCommand> m_CommandBuffer;
+		std::deque<PacketDescriptor> m_ResendBuffer;
 
 		std::vector<PendingPeer> m_PendingConnections;
 		std::map<uint32_t, Session> m_Sessions;

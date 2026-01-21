@@ -168,14 +168,45 @@ namespace Carnival::Network {
 
 	//=========================================== Command ===================================//
 
+	// Descriptors in resend Arena 
+	struct PacketDescriptor {
+		std::unique_ptr<std::byte[]> pData; // serialized data buffer
+		uint64_t size{}; // must be less than MTU
+		Session* sesh{ nullptr };
+		uint64_t lastSendTime{};
+		uint32_t sequenceNum{};
+		uint32_t sessionID{};
+		uint16_t resendCount{};
+		bool Acked{ false };
+
+		PacketDescriptor(std::byte* data,
+			uint64_t size, Session* s, uint32_t seq, uint32_t ID)
+			:size{ size }, sesh{ s }, sequenceNum{ seq },
+			sessionID{ ID },
+			resendCount{ 0 }, Acked{ false },
+			lastSendTime{ 0 } {
+			pData = std::move(std::unique_ptr<std::byte[]>(data));
+		}
+
+		PacketDescriptor(const PacketDescriptor&) = delete;
+		PacketDescriptor& operator=(const PacketDescriptor&) = delete;
+		PacketDescriptor(PacketDescriptor&& other) = default;
+		PacketDescriptor& operator=(PacketDescriptor&& other) = default;
+	};
+
 	struct NetCommand {
 		NetCommand(Session* s, uint32_t id, PacketFlags t)
 			: ep{ .sesh = s }, sessionID{ id }, type{ t } {}
+		
+		NetCommand(PacketDescriptor* data, PacketFlags t)
+			: ep{ .descriptor{data} }, type{ t } {}
+		
 		NetCommand(ipv4_addr addr, uint16_t port, PacketFlags t)
 			: ep{ .endpoint{.addr = addr, .port = port} }, type{ t } {}
 
 		union { // Can be active session or raw endpoint
 			Session* sesh{ nullptr };
+			PacketDescriptor* descriptor;
 			struct {
 				ipv4_addr addr{};
 				uint16_t port{};
@@ -186,34 +217,6 @@ namespace Carnival::Network {
 		PacketFlags type{};
 	};
 	
-	// Descriptors in resend Arena
-	struct PacketDescriptor {
-		void* pData{ nullptr }; // serialized data buffer
-		uint64_t size{}; // must be less than MTU
-		Session* sesh{ nullptr };
-		uint32_t sequenceNum{};
-		uint16_t resendCount{};
-		bool	 Acked{ false };
-
-		PacketDescriptor() = default;
-		PacketDescriptor(const PacketDescriptor&) = delete;
-		PacketDescriptor& operator=(const PacketDescriptor&) = delete;
-		PacketDescriptor(PacketDescriptor&& other) noexcept 
-			: pData{ other.pData }, size{ other.size },
-			sesh{ other.sesh }, sequenceNum{ other.sequenceNum },
-			resendCount{ other.resendCount }, Acked{ other.Acked }
-		{
-			other.pData = nullptr;
-			other.size = 0;
-			other.sesh = nullptr;
-			other.sequenceNum = 0;
-			other.resendCount = 0;
-			other.Acked = true;
-		}
-		~PacketDescriptor() {
-			if (pData) delete[] pData;
-		}
-	};
 	//=========================================== DEBUG ===================================//
 	struct NetworkStats {
 		uint64_t packetsSent{};

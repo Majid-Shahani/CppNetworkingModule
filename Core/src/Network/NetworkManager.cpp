@@ -38,7 +38,7 @@ namespace Carnival::Network {
 
 		m_PacketBuffer.reserve(PACKET_MTU);
 		m_CommandBuffer.reserve(35);
-		//m_PendingConnections.reserve((m_MaxSessions > 32 ? 32 : m_MaxSessions));
+		m_PendingConnections.reserve((m_MaxSessions > 32 ? 32 : m_MaxSessions));
 	}
 
 	void NetworkManager::maintainSessions()
@@ -61,23 +61,34 @@ namespace Carnival::Network {
 			it++;
 		}
 
-		// Submit Heartbeats and Detect timeout
+		// Detect timeout
+		// Replicate World
+		// Submit Heartbeats
 		for (auto& [id, sesh] : m_Sessions) {
-			for (int i{}; i < sesh.endpoint.size(); i++) {
-				auto& ep = sesh.endpoint[i];
-				if (ep.state == ConnectionState::DROPPING
-					|| ep.state == ConnectionState::TIMEOUT) continue;
-				// Endpoint timed out
+			auto handleEndpoint = [&](auto& ep, PacketFlags flag) {
+				if (ep.state == ConnectionState::DROPPING || ep.state == ConnectionState::TIMEOUT)
+					return;
+
+				// Timeout
 				if (now - ep.lastRecvTime > m_Policy.disconnect) {
 					ep.state = ConnectionState::TIMEOUT;
-					break;
+					return;
 				}
-				// Keep Alive
+
+				// Queue payload
+				if (flag == RELIABLE) {
+					queueReliablePayload(id, sesh);
+				}
+				// else queueUnreliablePayload(id, sesh);
+				 
+				// Heartbeat
 				if (now - ep.lastSentTime > m_Policy.heartbeat) {
-					m_CommandBuffer.emplace_back(&sesh, id,
-						static_cast<PacketFlags>(HEARTBEAT | (1 << (3 + i)) ));
+					m_CommandBuffer.emplace_back(&sesh, id, 
+						static_cast<PacketFlags>(flag | HEARTBEAT));
 				}
-			}
+			};
+			handleEndpoint(sesh.endpoint[EP_RELIABLE], RELIABLE);
+			handleEndpoint(sesh.endpoint[EP_UNRELIABLE], UNRELIABLE);
 		}
 	}
 	void NetworkManager::opportunisticReceive()
@@ -143,6 +154,33 @@ namespace Carnival::Network {
 			}
 		} while (res != PollResult::None);
 	}
+	void NetworkManager::queueResends()
+	{
+		auto now = Engine::getTime();
+		for (auto it{ m_ResendBuffer.begin() }; it != m_ResendBuffer.end();) {
+			auto& state = it->sesh->states[CH_RELIABLE];
+			// Check for Ack
+			if (!it->Acked) {
+				auto diff = state.lastSent - it->sequenceNum;
+				if (diff > 32) {
+					it = m_ResendBuffer.erase(it);
+					continue;
+				}
+				it->Acked = ((state.receivedACKField >> diff) & 1);
+			}
+			if (it->Acked) {
+				it = m_ResendBuffer.erase(it);
+				continue;
+			}
+
+			if ((now - it->lastSendTime) > m_Policy.resendDelay) {
+				m_CommandBuffer.emplace_back(&(*it), static_cast<PacketFlags>(STATE_LOAD | RELIABLE));
+				it->lastSendTime = now;
+			}
+
+			it++;
+		}
+	}
 	void NetworkManager::processCommands()
 	{
 		for (auto& cmd : m_CommandBuffer) {
@@ -170,6 +208,10 @@ namespace Carnival::Network {
 					sendHeartbeat(cmd.sessionID, *cmd.ep.sesh, EP_RELIABLE, CH_RELIABLE);
 					break;
 
+				case STATE_LOAD:
+				case EVENT_LOAD:
+					sendReliablePayload(*cmd.ep.descriptor);
+					break;
 				default:
 					CL_CORE_ASSERT(false, "Wrong Packet type and channel combo command!");
 					break;
@@ -238,18 +280,19 @@ namespace Carnival::Network {
 			tickCounter = tickCounter & (tickRate - 1);
 			if (tickCounter == 0) { // Run once a second
 				std::cout << "\033[2J\033[H" << std::flush;
-				cleanupSessions();
 				std::print("Net Stats:\n  Packets:\n    Sent: {}\n    Received: {}\n    Dropped: {}\n",
 					m_Stats.packetsSent, m_Stats.packetsReceived, m_Stats.packetsDropped);
 				std::print("  Bytes:\n    Sent: {}\n    Received: {}\n",
 					m_Stats.bytesSent, m_Stats.bytesReceived);
+				cleanupSessions();
 			}
-			
+
 			maintainSessions();
+			queueResends();
 			collectIncoming();
-			opportunisticReceive();
 			processCommands();
 
+			//opportunisticReceive();
 			// Less than 1ms Busy wait
 			uint64_t now = getTime();
 			while (now < m_NextTick) {
@@ -318,8 +361,31 @@ namespace Carnival::Network {
 
 		if ((header.flags & FRAGMENT) != 0)
 			append(header.fragLoad);
+	}
+	uint64_t NetworkManager::writeHeader(void* pData, const HeaderInfo& header)
+	{
+		uint64_t cursor{};
 
-		return;
+		auto append = [&](const auto& val) {
+			std::memcpy(static_cast<char*>(pData) + cursor, &val, sizeof(val));
+			cursor += sizeof(val);
+		};
+
+		CL_CORE_ASSERT(header.flags, "Header to be written needs flags"); // no validity check
+		// TODO: flag Validity Check util
+		CL_CORE_ASSERT(header.protocol == HEADER_VERSION, "Mismatch header versions!");
+
+		append(HEADER_VERSION);
+		append(header.flags);
+		append(header.seqNum);
+		append(header.ackField);
+		append(header.lastSeqRecv);
+		append(header.sessionID);
+
+		if ((header.flags & FRAGMENT) != 0)
+			append(header.fragLoad);
+
+		return cursor;
 	}
 	// Parse header from buffer, validate
 	HeaderInfo NetworkManager::parseHeader()
@@ -456,7 +522,7 @@ namespace Carnival::Network {
 
 		case EVENT_LOAD:
 		case STATE_LOAD:
-			return handlePayload(info, header, CH_RELIABLE, EP_RELIABLE);
+			return handlePayload(info, header, payloadSize, CH_RELIABLE, EP_RELIABLE);
 		default:
 			return false;
 		}
@@ -659,6 +725,37 @@ namespace Carnival::Network {
 		return true;
 	}
 
+	void NetworkManager::queueReliablePayload(uint32_t id, Session& sesh)
+	{
+		auto& context{ m_pWorld->getShardContext(id) };
+		// copy contextData, etc.
+		// size of data to be replicated, derive from world later
+		uint32_t sizeOfData{ 4 };
+
+		uint32_t sizeofHeader{ 21 }; // packet Header wire size
+		if (sizeOfData > PACKET_MTU) sizeofHeader += 6; // FragmentPayloadSize
+
+		auto packetSize{ sizeofHeader + sizeOfData };
+		auto packet{ new std::byte[packetSize]() };
+
+		HeaderInfo info{
+			.protocol = HEADER_VERSION,
+			.seqNum{sesh.states[CH_RELIABLE].lastSent++},
+			.ackField{sesh.states[CH_RELIABLE].sendingAckF},
+			.lastSeqRecv{sesh.states[CH_RELIABLE].lastReceived},
+			.sessionID{id},
+			.flags = static_cast<PacketFlags>(STATE_LOAD | RELIABLE),
+		};
+		uint64_t cursor{ writeHeader(packet, info) };
+		
+		// Copy Data
+		uint32_t data{ sesh.states[CH_RELIABLE].lastSent };
+		std::memcpy(packet + cursor, &data, 4);
+		cursor += 4;
+
+		m_ResendBuffer.emplace_back(packet, cursor, &sesh, info.seqNum, info.sessionID);
+	}
+
 	// Construct header, Send over Correct socket
 	inline void NetworkManager::sendRequest(ipv4_addr addr, uint16_t port) noexcept
 	{
@@ -679,9 +776,9 @@ namespace Carnival::Network {
 		sesh.states[1].receivedACKField <<= 1;
 		HeaderInfo info{
 			.protocol{ HEADER_VERSION },
-			.seqNum{sesh.states[1].lastSent++},
-			.ackField{sesh.states[1].sendingAckF},
-			.lastSeqRecv{sesh.states[1].lastReceived},
+			.seqNum{sesh.states[CH_RELIABLE].lastSent++},
+			.ackField{sesh.states[CH_RELIABLE].sendingAckF},
+			.lastSeqRecv{sesh.states[CH_RELIABLE].lastReceived},
 			.sessionID{sessionID},
 			.flags = static_cast<PacketFlags>(CONNECTION_ACCEPT | RELIABLE),
 		};
@@ -739,9 +836,9 @@ namespace Carnival::Network {
 	}
 
 	inline bool NetworkManager::sendReliablePayload(PacketDescriptor& packet) noexcept {
-		CL_CORE_ASSERT(packet.pData && packet.size, "Packet must have data and size");
+		CL_CORE_ASSERT(packet.pData.get() && packet.size, "Packet must have data and size");
 
-		auto res{ m_Socks[EP_RELIABLE].sendPacket(packet.pData, packet.size,
+		auto res{ m_Socks[EP_RELIABLE].sendPacket(packet.pData.get(), packet.size,
 			packet.sesh->endpoint[EP_RELIABLE].addr, packet.sesh->endpoint[EP_RELIABLE].port) };
 		if (res) {
 			m_Stats.bytesSent += packet.size;
@@ -775,8 +872,13 @@ namespace Carnival::Network {
 
 
 	bool NetworkManager::handlePayload(PacketInfo info, const HeaderInfo& header,
+		const uint64_t payloadSize,
 		uint8_t Channel, uint8_t endpoint)
 	{
+		if (auto it = m_Sessions.find(header.sessionID); it != m_Sessions.end()) {
+			updateSessionStats(info, header, it->second.endpoint[endpoint], it->second.states[Channel]);
+			return true;
+		}
 		return false;
 	}
 

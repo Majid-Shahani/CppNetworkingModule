@@ -94,7 +94,7 @@ int main() {
 	std::unique_ptr<NetworkManager> netMan{ std::make_unique<NetworkManager>(w.get(),
 		sockRel, sockURel, 64) };
 	std::jthread netRun{ [&]() {
-		netMan->run(512);
+		netMan->run(64);
 	} };
 
 	// =========================================== Main Loop ========================================= //
