@@ -22,15 +22,18 @@ namespace Carnival::ECS {
 		RO = ReadOnly,
 		RW = ReadWrite,
 	};
-
+	// ECS Storage & Networking Integration
 	class World {
 	private:
+
+		// Iterator over local-only component storage
 		template<QueryPolicy P, ECSComponent C>
 		struct InnerLocalIter {
 			InnerLocalIter(C* base, C* end) : current{ base }, end{ end } {
 				CL_CORE_ASSERT(base <= end, "base pointer has to be before end pointer");
 			}
 
+			// Compile-time write permission
 			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
 			
 			const C& read() const noexcept {
@@ -85,6 +88,8 @@ namespace Carnival::ECS {
 			C* current;
 			C* end;
 		};
+
+		// Iterator that marks entities dirty on write
 		template<QueryPolicy P, ECSComponent C>
 		struct InnerNetworkedIter {
 			InnerNetworkedIter(C* base, C* end, Entity* entity, World& refWorld)
@@ -96,6 +101,8 @@ namespace Carnival::ECS {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				return *current;
 			}
+
+			// Marks entity for replication
 			C& write() noexcept requires(P == QueryPolicy::ReadWrite) {
 				CL_CORE_ASSERT(current < end, "Accessing Iterator On End");
 				world.markDirty(*pEntity);
@@ -151,6 +158,8 @@ namespace Carnival::ECS {
 		};
 
 	public:
+
+		// Iterates local chunks first, then networked chunks
 		template <QueryPolicy P, ECSComponent C>
 		struct OuterIter {
 			using LocalIter = InnerLocalIter<P, C>;
@@ -158,6 +167,7 @@ namespace Carnival::ECS {
 			static constexpr bool writable = (P == QueryPolicy::ReadWrite);
 
 
+			// Chunked iterator across archetypes
 			OuterIter(std::span<LocalIter> locals, 
 				std::span<NetworkedIter> networks,
 				uint64_t chunk = 0,
@@ -246,6 +256,8 @@ namespace Carnival::ECS {
 			bool isDone{ false };
 			// 6 Bytes of Padding
 		};
+
+		// Range adapter for ECS component queries
 		template <QueryPolicy P, ECSComponent C>
 		struct ComponentRange {
 			using Iterator = OuterIter<P, C>;
@@ -253,6 +265,7 @@ namespace Carnival::ECS {
 			ComponentRange(std::vector<InnerLocalIter<P, C>>&& local, std::vector<InnerNetworkedIter<P, C>>&& networks)
 				: locals{ std::move(local) }, networkeds{ std::move(networks) } {}
 
+			// Skips empty chunks
 			Iterator begin() { 
 				uint64_t chunk = 0;
 				bool onLocal = true;
@@ -280,6 +293,7 @@ namespace Carnival::ECS {
 			std::vector<InnerNetworkedIter<P, C>> networkeds;
 		};
 
+		// Controls when structural changes are allowed
 		enum class WorldPhase : uint8_t {
 			EXECUTION,
 			MAINTENANCE,
@@ -287,6 +301,7 @@ namespace Carnival::ECS {
 		};
 
 	public:
+		// Creates entity with component set
 		template <ECSComponent... Ts>
 		Entity createEntity() {
 			std::vector<uint64_t> IDs;
@@ -303,6 +318,7 @@ namespace Carnival::ECS {
 		template<ECSComponent... Ts>
 		void registerComponents() {	(m_Registry.registerComponent<Ts>(), ...); }
 		
+		// Migrates entity between archetypes
 		template <ECSComponent... Ts>
 		void addComponentsToEntity(Entity e) {
 			const auto& rec{ m_EntityManager.get(e) };
@@ -318,6 +334,8 @@ namespace Carnival::ECS {
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
+
+			// Create archetype on demand
 			auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, static_cast<void*>(this), flag, 5);
 			if (!inserted) {
 				CL_CORE_ASSERT(it->second.flags == flag, "Mismatch Network flags on archetype");
@@ -345,6 +363,8 @@ namespace Carnival::ECS {
 			uint64_t id = Archetype::hashArchetypeID(components);
 
 			auto flag = getNetFlag(components);
+
+			// Create archetype on demand
 			auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, static_cast<void*>(this), flag, 5);
 			if (!inserted) {
 				CL_CORE_ASSERT(it->second.flags == flag, "Mismatch Network flags on archetype");
@@ -359,11 +379,13 @@ namespace Carnival::ECS {
 			m_EntityManager.updateEntityLocation(e, it->second.arch.get(), index);
 		}
 
+		// Query over all archetypes containing component T
 		template <QueryPolicy P, ECSComponent T>
 		ComponentRange<P, T> query() {
 			std::vector<InnerLocalIter<P, T>> locals;
 			std::vector<InnerNetworkedIter<P, T>> nets;
 
+			// Split local and networked storage
 			for (auto& [id, rec] : m_Archetypes) {
 				Archetype& arch = *rec.arch;
 				if (arch.getEntityCount() == 0) continue;
@@ -392,6 +414,8 @@ namespace Carnival::ECS {
 		uint64_t getNetID(Entity eID) { return m_IDGen.createID(eID); }
 		void freeNetID(uint32_t netID) { m_IDGen.destroyID(netID); }
 
+		// Marks entity for ON_UPDATE replication
+		// Possibly for more later
 		void markDirty(Entity e) {
 			auto& entry{ m_EntityManager.get(e) };
 			auto arr{ static_cast<OnUpdateNetworkComponent*>(entry.pArchetype->getComponentData(OnUpdateNetworkComponent::ID)) };
@@ -401,6 +425,7 @@ namespace Carnival::ECS {
 			m_ReplicationBuffer.push(e);
 		}
 
+		// Derives networking mode from components
 		NetworkFlags getNetFlag(std::span<uint64_t> compIDs) {
 			CL_CORE_ASSERT(!_debug_isDoubleNetworked(compIDs), "Cannot have both networking types");
 			for (const auto id : compIDs) {
@@ -409,6 +434,8 @@ namespace Carnival::ECS {
 			}
 			return NetworkFlags::LOCAL;
 		}
+
+		// Debug validation only
 		bool _debug_isDoubleNetworked(std::span<uint64_t> compIDs) {
 			for (const auto id : compIDs)
 				if (id == OnTickNetworkComponent::ID)

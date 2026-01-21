@@ -4,22 +4,28 @@
 #include <CNM/utils.h>
 
 namespace Carnival::Network {
+
+	// Maximum packet payload size chosen to avoid IP fragmentation on typical networks
 	constexpr static uint32_t PACKET_MTU{ 1200 };
 
+	// Protocol identifier hashed at compile time to reject incompatible clients
 	static constexpr uint32_t	HEADER_VERSION	= utils::fnv1a32("CarnivalEngine.Network_UDP_0.0.1");
-	static constexpr uint8_t	CHANNELS		= 3; // 0 - Unreliable, 1 - Reliable, 2 - Snapshot
+	static constexpr uint8_t	CHANNELS		= 3; // Logical channels mapped to different reliability/ordering guarantees
 	static constexpr uint8_t	SOCKET_COUNT	= CHANNELS - 1; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
-	
+
+	// Logical packet channels
 	enum CH : uint8_t {
 		CH_UNRELIABLE = 0,
 		CH_RELIABLE = 1,
 		CH_SNAPSHOT = 2,
 	};
+	// Physical socket endpoints
 	enum EP : uint8_t {
 		EP_UNRELIABLE = 0,
 		EP_RELIABLE = 1,
 	};
-	// Address will be set in host byte order after call to bind / send
+
+	// current socket configuration and lifecycle state
 	enum SocketStatus : uint8_t {
 		NONE			= 0,		// uninitialized or closed
 		OPEN			= 1,		// handle created and valid
@@ -46,6 +52,7 @@ namespace Carnival::Network {
 		SocketStatus	status{SocketStatus::NONBLOCKING};
 	};
 
+	// the sender of a received packet
 	struct PacketInfo {
 		ipv4_addr fromAddr{};
 		uint16_t fromPort{};
@@ -87,10 +94,8 @@ namespace Carnival::Network {
 	};
 	// Wire Format
 	struct PacketHeader {
-		uint32_t		PROTOCOL_VERSION{ HEADER_VERSION };
-		PacketFlags		Flags{ PacketFlags::HEARTBEAT | PacketFlags::UNRELIABLE};
-		
-		// If flags != Connection / Heartbeat
+		uint32_t	PROTOCOL_VERSION{ HEADER_VERSION };
+		PacketFlags	Flags{ PacketFlags::HEARTBEAT | PacketFlags::UNRELIABLE};
 		uint32_t	SequenceNumber{}; // Sequence of this packet being sent.
 		uint32_t	ACKField{}; // Last 32 packets received
 		uint32_t	LastSeqReceived{};
@@ -108,23 +113,26 @@ namespace Carnival::Network {
 		uint32_t sessionID{};
 		FragmentLoad fragLoad{};
 		PacketFlags flags{ INVALID };
-		uint8_t offset{};
+		uint8_t offset{}; // Byte offset to payload
 	};
 
 	//======================================== Connection ================================//
-
+	
+	// Connection Lifecycle
 	enum class ConnectionState : uint8_t {
 		CONNECTING, // Handshake not complete
 		CONNECTED, // Alive
 		DROPPING, // Explicit Teardown, Cannot Revive!
 		TIMEOUT, // Can Revive!
 	};
+	// Temporary State in handshakes
 	struct PendingPeer {
 		uint64_t	lastSendTime{}; // in MicroSecond
 		ipv4_addr	addr{};
 		uint16_t	port{};
 		uint16_t	retryCount{};
 	};
+
 	struct ReliabilityPolicy { // time in MicroSeconds
 		uint32_t resendDelay	= 350'000;
 		uint32_t maxResendDelay = 350'000'0;
@@ -142,6 +150,7 @@ namespace Carnival::Network {
 		uint16_t	batchNumber{};
 		uint16_t	FRAGMENT_COUNT{};
 	};
+	// Remote endpoint activity and data
 	struct Endpoint {
 		uint64_t	lastRecvTime{}; // in MicroSecond
 		uint64_t	lastSentTime{}; // in MicroSecond
@@ -149,6 +158,7 @@ namespace Carnival::Network {
 		uint16_t	port{};
 		ConnectionState state{ ConnectionState::CONNECTING };
 	};
+	// Logical Connection
 	struct Session {
 		std::array<Endpoint, SOCKET_COUNT>	endpoint; // 0 - High Frequency Unreliable, 1 - Reliable, Snapshots
 		std::array<ChannelState, CHANNELS>	states; // 0 - Unreliable, 1 - Reliable Unordered, 2 - Snapshot
@@ -164,7 +174,7 @@ namespace Carnival::Network {
 		NetCommand(ipv4_addr addr, uint16_t port, PacketFlags t)
 			: ep{ .endpoint{.addr = addr, .port = port} }, type{ t } {}
 
-		union {
+		union { // Can be active session or raw endpoint
 			Session* sesh{ nullptr };
 			struct {
 				ipv4_addr addr{};

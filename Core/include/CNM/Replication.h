@@ -7,14 +7,14 @@
 #include <ECS/Entity.h>
 
 namespace Carnival {
-
+	// Coordination flags
 	struct BufferIndex {
 		bool writerActive{ false };
 		bool writerIndex{ false }; // false = 0, true = 1
 		bool readerIndex{ true };
 		bool readerActive{ false };
 	};
-
+	// Serialized Entity State
 	struct EntitySnapshot {
 		~EntitySnapshot() {
 			if (pSerializedData) delete[] pSerializedData;
@@ -24,7 +24,7 @@ namespace Carnival {
 		uint64_t size{};
 		void* pSerializedData{ nullptr };
 	};
-
+	// Per Shard replication state
 	struct ReplicationContext {
 		static_assert(std::atomic<BufferIndex>::is_always_lock_free, "Buffer index is not lock-free");
 
@@ -34,7 +34,7 @@ namespace Carnival {
 		MessageBuffer reliableStagingBuffer{ 256 };
 		// Unreliable Data
 		std::unique_ptr<std::atomic<BufferIndex>> unreliableIndex{ std::make_unique<std::atomic<BufferIndex>>() };
-		std::array<MessageBuffer, 2> sendBuffers{};
-		std::array<MessageBuffer, 2> receiveBuffers{};
+		std::array<MessageBuffer, 2> sendBuffers{}; // double buffered outgoing
+		std::array<MessageBuffer, 2> receiveBuffers{}; // double buffered incoming
 	};
 }

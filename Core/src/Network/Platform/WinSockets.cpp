@@ -4,6 +4,7 @@
 #include <include/CNM/macros.h>
 #include <include/CNM/Socket.h>
 namespace {
+	// Process-Wide State
 	enum class WSAState : uint8_t {UNINITIALIZED, INITIALIZED};
 	WSAState winsockState{WSAState::UNINITIALIZED};
 	uint16_t socketRefCount{ 0 };
@@ -13,13 +14,14 @@ namespace {
 }
 
 namespace Carnival::Network {
+	// Non-Opening Constructor
 	Socket::Socket() noexcept {
 		if (socketRefCount++ == 0) {
 			if (WSAStartup(winsockVersion, &wsaData) != 0) std::terminate();
 			winsockState = WSAState::INITIALIZED;
 		}
 	}
-
+	// Opens Socket immediately
 	Socket::Socket(const SocketData& initData) noexcept
 	{
 		if (socketRefCount++ == 0) {
@@ -93,6 +95,7 @@ namespace Carnival::Network {
 		return *this;
 	}
 
+	// Create Socket, Apply State
 	void Socket::openSocket()
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
@@ -106,7 +109,7 @@ namespace Carnival::Network {
 			}
 		}
 		m_Status = static_cast<SocketStatus>(SocketStatus::OPEN | m_Status);
-
+		// Enable Non-Blocking IO
 		if (m_Status & SocketStatus::NONBLOCKING) {
 			unsigned long nb = 1;
 			if (ioctlsocket(m_Handle, FIONBIO, &nb) == SOCKET_ERROR)
@@ -114,7 +117,7 @@ namespace Carnival::Network {
 				std::cerr << "Failed to set Non-Blocking on Socket.\n";
 			}
 		}
-
+		// Allow Address reuse
 		if (m_Status & SocketStatus::REUSEADDR) {
 			char reuse = 1;
 			if (setsockopt(m_Handle, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) == SOCKET_ERROR) {
@@ -122,6 +125,7 @@ namespace Carnival::Network {
 			}
 		}
 	}
+	// Free OS Resource
 	bool Socket::closeSocket() noexcept
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
@@ -137,7 +141,7 @@ namespace Carnival::Network {
 			return true;
 		}
 	}
-
+	// bind and query port
 	bool Socket::bindSocket()
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
@@ -157,6 +161,7 @@ namespace Carnival::Network {
 		m_Status = static_cast<SocketStatus>(m_Status | SocketStatus::BOUND);
 		m_Port = ntohs(service.sin_port);
 		m_InAddress.addr32 = ntohl(service.sin_addr.s_addr);
+		// Debug
 		printf("In Address: %u.%u.%u.%u:%u\n",
 			(m_InAddress.addr32 >> 24) & 0xff,
 			(m_InAddress.addr32 >> 16) & 0xff,
@@ -166,6 +171,7 @@ namespace Carnival::Network {
 
 		return true;
 	}
+	// Send To Wrapper using existing memory
 	bool Socket::sendPackets(std::span<const std::byte> packet,
 		const ipv4_addr outAddr, 
 		uint16_t port) const noexcept
@@ -189,7 +195,7 @@ namespace Carnival::Network {
 		if (sent != packet.size()) return false;
 		else return true;
 	}
-
+	// Non-blocking Poll
 	PollResult Socket::poll() const noexcept {
 		WSAPOLLFD pfd{};
 		pfd.fd = m_Handle;
@@ -214,11 +220,12 @@ namespace Carnival::Network {
 		packet.resize(PACKET_MTU);
 		int64_t bytes = recvfrom(m_Handle, reinterpret_cast<char*>(packet.data()),
 			static_cast<int>(PACKET_MTU), 0, (sockaddr*)&from, &fromLength);
-		if (bytes >= 0) {
+		if (bytes >= 0) { // if no errors
 			packet.resize(bytes);
 			return { ntohl(from.sin_addr.s_addr), ntohs(from.sin_port) };
 		}
 
+		// if error
 		int err{ WSAGetLastError() };
 		switch (err) {
 		case 0:
@@ -242,7 +249,7 @@ namespace Carnival::Network {
 
 		return {};
 	}
-
+	// Probe socket error
 	SocketError Socket::pollError() noexcept
 	{
 		char dummy{};

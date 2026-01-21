@@ -7,7 +7,7 @@
 
 namespace Carnival::ECS {
 
-	// could later have a list of archetypes that have this with component index, for easier queries.
+	// Runtime Component Descriptions
 	struct ComponentMetadata {
 		uint64_t componentTypeID{ 0xFFFFFFFFFFFFFFFFul };
 
@@ -17,17 +17,19 @@ namespace Carnival::ECS {
 		using SerializeFn = void (*)(const void* src, MessageBuffer& outbuffer, uint32_t count);
 		using DeserializeFn = void (*)(void* dest, const MessageBuffer& inBuffer, uint32_t count);
 
+		// Hooks
 		ConstructFn		constructFn = nullptr; // placement-new elements
 		DestructFn		destructFn = nullptr; // destruct elements
 		CopyFn			copyFn = nullptr;
 		SerializeFn		serializeFn = nullptr;
 		DeserializeFn	deserializeFn = nullptr;
-
+		// Component Layout Info
 		uint32_t sizeOfComponent{ 0xFFFFFFFFu };
 		uint32_t alignOfComponent{ 0xFFFFFFFFu };
 	};
 
 	// Highly Preferred to be packed and POD
+	// Compile Time Component Interface
 	template<typename T>
 	concept ECSComponent =
 		requires { { T::ID } -> std::same_as<const uint64_t&>; }
@@ -37,7 +39,8 @@ namespace Carnival::ECS {
 		&& std::same_as<decltype(&T::serialize), ComponentMetadata::SerializeFn>
 		&& std::same_as<decltype(&T::deserialize), ComponentMetadata::DeserializeFn>;
 
-	// ComponentRegistry must not be cleaned mid-session, Components must not be removed mid-Session
+	// Global Component Type Registry
+	// must not be cleaned mid-session, Components must not be removed mid-Session
 	class ComponentRegistry {
 	public:
 		// TODO: RULE OF 5!
@@ -70,13 +73,14 @@ namespace Carnival::ECS {
 	private:
 		bool canAdd(const ComponentMetadata& metaData) const;
 	private:
-		std::vector<ComponentMetadata> m_MetaData;
+		std::vector<ComponentMetadata> m_MetaData; // metadata Table
 	};
 
+	// State-Based Replication
 	struct OnUpdateNetworkComponent {
 		uint64_t networkID{};
 		uint64_t version{};
-		bool dirty{};
+		bool dirty{}; // Needs resend
 
 		static constexpr uint64_t ID{ utils::fnv1a64("OnUpdateNetworkComponent") };
 		static void construct(void* dest, void* world, Entity e) noexcept {
@@ -93,6 +97,7 @@ namespace Carnival::ECS {
 			// need index or handled internally
 		}
 	};
+	// Tick-Based Replication
 	struct OnTickNetworkComponent {
 		uint64_t networkID{};
 

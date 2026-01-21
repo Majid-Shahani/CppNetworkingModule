@@ -8,10 +8,11 @@
 
 namespace Carnival::ECS {
 
+	// Dense Entity index + free list allocator
 	// ================================================================================================== //
 	// ==================================== Entity Manager ============================================= //
 	// ================================================================================================ //
-
+	
 	Entity EntityManager::create(Archetype* pArchetype, uint32_t index, EntityStatus status) {
 		status = static_cast<EntityStatus>(status | ALIVE);
 		if (!m_FreeIDs.empty()) {
@@ -64,6 +65,8 @@ namespace Carnival::ECS {
 	// ================================================================================================ //
 	// ==================================== NetIDGenerator ============================================ //
 	// ================================================================================================ //
+
+	// Packed (slot | sequence) network ID
 	static constexpr uint64_t getPack(uint32_t slot, uint32_t seq) { return (static_cast<uint64_t>(slot) << 32) | seq; }
 	static constexpr uint32_t getSlot(uint64_t value) { return static_cast<uint32_t>(value >> 32); }
 	static constexpr uint32_t getSeq(uint64_t value) { return static_cast<uint32_t>(value); }
@@ -80,6 +83,7 @@ namespace Carnival::ECS {
 		return getPack(static_cast<uint32_t>(m_Entries.size() - 1), 1);
 	}
 
+	// Validate sequence before resolving entity
 	Entity Carnival::ECS::NetIDGenerator::getEntity(uint64_t netID)
 	{
 		CL_CORE_ASSERT(getSlot(netID) < m_Entries.size(), "Entity access for out of bounds entity requested");
@@ -87,6 +91,7 @@ namespace Carnival::ECS {
 		return getSlot(m_Entries[getSlot(netID)]);
 	}
 
+	// Invalidate by bumping sequence
 	void Carnival::ECS::NetIDGenerator::destroyID(uint64_t netID)
 	{
 		CL_CORE_ASSERT(getSlot(netID) < m_Entries.size(), "Entity access for out of bounds entity requested");
@@ -138,6 +143,7 @@ namespace Carnival::ECS {
 		else return static_cast<uint16_t>(m_MetaData[handle].sizeOfComponent);
 	}
 
+	// Reject duplicate IDs, detect hash collision
 	bool ComponentRegistry::canAdd(const ComponentMetadata& metaData) const {
 		for (const auto& comp : m_MetaData)
 			if (comp.componentTypeID == metaData.componentTypeID) {
@@ -151,7 +157,7 @@ namespace Carnival::ECS {
 	// ======================================= Archetype ============================================== //
 	// ================================================================================================ //
 
-	
+	// Build SoA columns from validated component IDs
 	std::unique_ptr<Archetype> Archetype::create(const ComponentRegistry& metadataReg,
 		std::span<const uint64_t> sortedComponentIDs, uint64_t archID, void* pWorld, uint32_t initialCapacity) {
 		CL_CORE_ASSERT(std::ranges::is_sorted(sortedComponentIDs), "Component ID List must be sorted.");
@@ -176,6 +182,8 @@ namespace Carnival::ECS {
 		}
 		return m_EntityCount++;
 	}
+
+	// Copy shared components, construct missing ones
 	uint32_t Archetype::addEntity(Entity id, const Archetype& src, uint32_t srcIndex) {
 		ensureCapacity(m_EntityCount + 1);
 
@@ -199,6 +207,7 @@ namespace Carnival::ECS {
 		return m_EntityCount++;
 	}
 
+	// Linear search fallback
 	std::pair<uint32_t, uint32_t> Archetype::removeEntity(Entity entity) noexcept {
 		for (uint32_t i{}; i < m_EntityCount; i++) {
 			if (m_Entities[i] == entity) return removeEntityAt(i);
@@ -206,7 +215,8 @@ namespace Carnival::ECS {
 		return { entity, UINT32_MAX };
 	}
 	// Possibly Destructors should not be called, if moved / copied entity will be come invalid after destruction.
-	// RETURNS INDEX OF entity to be updated in entity manager to the index passed in
+	// // Returns {movedEntity, newIndex} to be updated in entity manager to the index passed in
+	// Swap-with-last removal
 	std::pair<uint32_t, uint32_t> Archetype::removeEntityAt(uint32_t index) noexcept {
 		CL_CORE_ASSERT(index < m_EntityCount, "remove called on out of bounds index");
 		// Swap and Destruct Components
@@ -239,21 +249,28 @@ namespace Carnival::ECS {
 
 	void Archetype::serializeEntity(Entity id, MessageBuffer& staging) const  {
 		for (uint32_t i{}; i < m_Entities.size(); i++) {
-			if (m_Entities[i] == id) serializeIndex(i, staging);
-			return;
+			if (m_Entities[i] == id) {
+				serializeIndex(i, staging);
+				return;
+			}
 		}
 	}
+
+	// Serialize one entity across all components
 	void Archetype::serializeIndex(uint32_t idx, MessageBuffer& staging) const  {
 		for (auto& c : m_Components) {
 			c.metadata.serializeFn(static_cast<uint8_t*>(c.pComponentData) + (idx * c.metadata.sizeOfComponent), staging, 1);
 		}
 	}
+
+	// Serialize full SoA columns
 	void Archetype::serializeArchetype(MessageBuffer& buff) const {
 		for (auto& c : m_Components) {
 			c.metadata.serializeFn(c.pComponentData, buff, m_EntityCount);
 		}
 	}
 
+	// Destroy live components and free aligned storage
 	Archetype::~Archetype() noexcept {
 		for (auto& cc : m_Components) {
 			if (cc.pComponentData != nullptr) {
@@ -263,6 +280,8 @@ namespace Carnival::ECS {
 			}
 		}
 	}
+
+	// Allocate aligned SoA storage
 	Archetype::Archetype(std::vector<ComponentColumn>&& components,
 		uint64_t pArchetype,
 		void*	 world,
@@ -296,6 +315,7 @@ namespace Carnival::ECS {
 	}
 
 	// fnv1a 64-bit hash specifically for little-endian systems, not cross-compatible
+	// Deterministic hash of sorted component IDs
 	uint64_t Archetype::hashArchetypeID(std::span<const uint64_t> compIDs) noexcept {
 		CL_CORE_ASSERT(std::ranges::is_sorted(compIDs), "IDs must be sorted");
 		uint64_t hash = utils::FNV64_OFFSET_BASIS;

@@ -1,5 +1,7 @@
 #pragma once
 
+// Architecture Specific Busy wait helpers
+// CPU friendly Spin-wait
 #ifdef CL_X64
 #include <immintrin.h>
 static inline void SpinPause() { _mm_pause(); }
@@ -61,6 +63,7 @@ namespace Carnival {
 		// ========================================== MESSAGE WRITE ======================================= //
 		
 		// Returns Address, call markReady once message has been written
+		// Reserve space for one message
 		std::byte* startMessage(uint32_t size) {
 			if (m_MessageInFlight)	return nullptr;
 			m_MessageInFlight = true;
@@ -106,6 +109,7 @@ namespace Carnival {
 			endMessage();
 		}
 		// ========================================== MESSAGE READ ======================================= //
+		// View of serialized messages
 		std::span<const std::byte> getReadyMessages() { return { m_Data, m_Data + m_Size }; }
 
 		// =============================================================================================== //
@@ -138,6 +142,7 @@ namespace Carnival {
 		std::byte* m_Data;
 		uint32_t m_Capacity;
 		uint32_t m_Size{};
+		// Prevent overlapping message writes
 		bool m_MessageInFlight = false;
 	};
 
@@ -149,8 +154,8 @@ namespace Carnival {
 	// once read phase ends, both indices are set to 0. buffer is reset.
 
 	// Currently : Preliminary MPMC, could be simpler and more efficient.
-
-	// Size has to be power of 2
+	// Lock-Free Ring Buffer
+	// Size has to be power of 2, once cycle traversal and wrap-around
 	template<uint32_t _size>
 	class ReplicationBuffer {
 	public:
@@ -159,6 +164,7 @@ namespace Carnival {
 			static_assert( (_size & (_size - 1)) == 0, "Size must be a power of 2");
 			data = new std::atomic<uint64_t>[_size]();
 			for (uint64_t i{}; i < _size; i++) {
+				// Initialize slots with expected sequences
 				data[i].store(getPack(0, static_cast<uint32_t>(i << 1)), std::memory_order_release);
 			}
 		}
@@ -177,18 +183,22 @@ namespace Carnival {
 				uint32_t idx = writeIndex.load(std::memory_order::acquire);
 				uint64_t val = data[getIndex(idx)].load(std::memory_order::acquire);
 				uint32_t seq = getSeq(val);
-
+				// Slot Available for Write
 				if (seq == static_cast<uint32_t>(idx << 1)) {
 					uint64_t entryData{ getPack(eID, seq | 1u) };
 					if (data[getIndex(idx)].compare_exchange_strong(val, entryData,
 						std::memory_order::release, std::memory_order::relaxed)) {
-						writeIndex.compare_exchange_strong(idx, idx + 1, std::memory_order::release, std::memory_order::relaxed);
+						writeIndex.compare_exchange_strong(idx, idx + 1,
+							std::memory_order::release, std::memory_order::relaxed);
 						return true;
 					}
 				}
+				// Slot already written, Cooperative advance
 				else if (seq == static_cast<uint32_t>(idx << 1 | 1u)) {
-					writeIndex.compare_exchange_strong(idx, idx + 1, std::memory_order::release, std::memory_order::relaxed);
+					writeIndex.compare_exchange_strong(idx, idx + 1,
+						std::memory_order::release, std::memory_order::relaxed);
 				}
+				// Buffer Full
 				else if (static_cast<uint32_t>(seq + (_size << 1))
 					== static_cast<uint32_t>((idx << 1) | 1u)) {
 					return false;
@@ -202,20 +212,24 @@ namespace Carnival {
 			while (true) {
 				uint32_t idx = readIndex.load(std::memory_order::relaxed);
 				uint64_t e = data[getIndex(idx)].load(std::memory_order_acquire);
-
+				// contains valid entry
 				if (getSeq(e) == static_cast<uint32_t>((idx << 1) | 1u)) {
 					uint64_t empty{ getPack(0, static_cast<uint32_t>((idx + _size) << 1u)) };
 
 					if (data[getIndex(idx)].compare_exchange_strong(e, empty,
 						std::memory_order::release, std::memory_order::relaxed)) {
 						eID = getEntityID(e);
-						readIndex.compare_exchange_strong(idx, idx + 1, std::memory_order::release, std::memory_order::relaxed);
+						readIndex.compare_exchange_strong(idx, idx + 1,
+							std::memory_order::release, std::memory_order::relaxed);
 						return true;
 					}
 				}
+				// already consumed, cooperative advance
 				else if ((getSeq(e) | 1u) == static_cast<uint32_t>(((idx + _size) << 1) | 1u)) {
-					readIndex.compare_exchange_strong(idx, idx + 1, std::memory_order::release, std::memory_order::relaxed);
+					readIndex.compare_exchange_strong(idx, idx + 1,
+						std::memory_order::release, std::memory_order::relaxed);
 				}
+				// buffer empty
 				else if (getSeq(e) == static_cast<uint32_t>(idx << 1)) {
 					return false;
 				}
@@ -223,6 +237,7 @@ namespace Carnival {
 			}
 		}
 	private:
+		// Packed entry helpers: [entityID | sequence]
 		static constexpr uint64_t getPack(uint32_t eID, uint32_t seq) { return (static_cast<uint64_t>(eID) << 32) | seq; }
 		static constexpr uint32_t getEntityID(uint64_t value) { return static_cast<uint32_t>(value >> 32); }
 		static constexpr uint32_t getSeq(uint64_t value) { return static_cast<uint32_t>(value); }
@@ -235,7 +250,7 @@ namespace Carnival {
 
 
 	/*
-	* Reliable Buffer:
+	* TODO: Reliable Resend Buffer
 	* 
 	* 
 	*/

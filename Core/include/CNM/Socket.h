@@ -7,12 +7,14 @@
 #include <CNM/cnm_core.h>
 
 namespace Carnival::Network {
+
+	// lightweight udp socket wrapper
 	class Socket {
 	public:
 		Socket() noexcept;
 		Socket(const SocketData& initData) noexcept;
 		~Socket() noexcept;
-
+		// Poll two sockets simultaneously
 		static PollResult waitForPackets(int32_t timeout, uint64_t handle1, uint64_t handle2) noexcept;
 
 		//multiple sockets for same IP/Port not allowed
@@ -26,9 +28,11 @@ namespace Carnival::Network {
 
 		// SocketData port (if 0) is overwritten after call to bindSocket
 		bool bindSocket();
+		// Send single UDP Datagram
 		bool sendPackets(std::span<const std::byte> packet, const ipv4_addr outAddr, uint16_t port = 0) const noexcept;
 
 		PollResult poll() const noexcept;
+		// Receive One Datagram
 		PacketInfo receivePacket(std::vector<std::byte>& packet) noexcept;
 		SocketError pollError() noexcept;
 

@@ -15,7 +15,8 @@ namespace Carnival::ECS {
 
 namespace Carnival::Network {
 	class NetworkManager {
-	public:		
+	public:
+		// Hooks into world, Sets up sockets
 		NetworkManager(ECS::World* pWorld, 
 			const SocketData& relSockData, const SocketData& urelSockData, 
 			uint16_t maxSessions);
@@ -27,6 +28,7 @@ namespace Carnival::Network {
 		NetworkManager& operator=(NetworkManager&&)			= delete;
 		
 		bool isRunning() { return m_Running.test(std::memory_order_acquire); }
+		// Main loop, drives network tick
 		void run(uint16_t tickRate); // Tickrate must be a power of two
 		void stop(); // blocking
 
@@ -43,6 +45,7 @@ namespace Carnival::Network {
 		void writeHeader(const HeaderInfo& header);
 		HeaderInfo parseHeader();
 		
+		// Validate sequence numbers, update ACK, NAT handling
 		bool updateSessionStats(const PacketInfo packet, const HeaderInfo& header,
 			Endpoint& ep, ChannelState& state);
 
@@ -80,12 +83,13 @@ namespace Carnival::Network {
 		inline void sendHeartbeat(uint32_t sessionID, Session& sesh,
 			uint8_t endpointIndex, uint8_t channelIndex) noexcept;
 
-		void collectIncoming(); // receive waiting packets
-		void maintainSessions(); // book keeping and keep connections alive
+		void collectIncoming(); // pull packets from sockets
+		void maintainSessions(); // retry pending, send heartbeat, check timeouts
 		void opportunisticReceive(); // Wait until next tick for new packets
-		void processCommands(); // send waiting messages
+		void processCommands(); // send queued messages
 
-		void cleanupSessions(); // delete dropping sessions
+		// mark timed out sessions, remove after grace
+		void cleanupSessions();
 	private:
 		NetworkStats m_Stats{};
 

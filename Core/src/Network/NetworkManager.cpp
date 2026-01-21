@@ -52,6 +52,7 @@ namespace Carnival::Network {
 		// Retry Pending Connections
 		for (auto it{ m_PendingConnections.begin() }; it != m_PendingConnections.end();) {
 			if (now - it->lastSendTime > m_Policy.resendDelay) {
+				// Resend Connection Request
 				it->retryCount++;
 				if (it->retryCount > m_Policy.maxRetries) {
 					it = m_PendingConnections.erase(it);
@@ -70,12 +71,12 @@ namespace Carnival::Network {
 				auto& ep = sesh.endpoint[i];
 				if (ep.state == ConnectionState::DROPPING
 					|| ep.state == ConnectionState::TIMEOUT) continue;
-
+				// Endpoint timed out
 				if (now - ep.lastRecvTime > m_Policy.disconnect) {
 					ep.state = ConnectionState::TIMEOUT;
 					break;
 				}
-
+				// Keep Alive
 				if (now - ep.lastSentTime > m_Policy.heartbeat) {
 					m_CommandBuffer.emplace_back(&sesh, id,
 						static_cast<PacketFlags>(HEARTBEAT | (1 << (3 + i)) ));
@@ -89,8 +90,10 @@ namespace Carnival::Network {
 			uint64_t now{ getTime() };
 			if (now >= m_NextTick) return;
 			uint64_t remainingTimeUs = m_NextTick - now;
+			// Skip short Waits, reduce jitter
 			if (remainingTimeUs <= 1500) return;
 
+			// sleep until timeout or wake up if packet / error on sockets
 			PollResult res{ Socket::waitForPackets(static_cast<int32_t>(remainingTimeUs / 1000),
 				m_Socks[0].getHandle(), m_Socks[1].getHandle()) };
 
@@ -114,7 +117,7 @@ namespace Carnival::Network {
 					m_Stats.bytesReceived += m_PacketBuffer.size();
 
 					// TODO: Check Against Drop List
-
+					// Drop Packet if Invalid
 					if (!handleReliablePacket(info)) m_Stats.packetsDropped++;
 				}
 			}
@@ -134,7 +137,7 @@ namespace Carnival::Network {
 				if (m_PacketBuffer.size() != 0) {
 					m_Stats.packetsReceived++;
 					m_Stats.bytesReceived += m_PacketBuffer.size();
-
+					// Drop Packet if Invalid
 					if (!handleUnreliablePacket(info)) m_Stats.packetsDropped++;
 				}
 			}
@@ -198,6 +201,8 @@ namespace Carnival::Network {
 			auto& sesh{ it->second };
 			if (sesh.endpoint[EP_UNRELIABLE].state == ConnectionState::TIMEOUT
 				&& sesh.endpoint[EP_RELIABLE].state == ConnectionState::TIMEOUT) {
+				// Starting Dropping timer for timed out session,
+				// Reconnect not allowed
 				sesh.graceTimer = now;
 				sesh.endpoint[EP_RELIABLE].state = ConnectionState::DROPPING;
 				sesh.endpoint[EP_UNRELIABLE].state = ConnectionState::DROPPING;
@@ -206,6 +211,7 @@ namespace Carnival::Network {
 			else if (sesh.endpoint[EP_UNRELIABLE].state == ConnectionState::DROPPING
 				&& sesh.endpoint[EP_RELIABLE].state == ConnectionState::DROPPING) {
 				if (now - sesh.graceTimer > m_Policy.disconnect) {
+					// Grace period over, Destruct session
 					std::print("Session {} Disconnected!\n", it->first);
 					it = m_Sessions.erase(it);
 					continue;
@@ -224,6 +230,7 @@ namespace Carnival::Network {
 		m_Running.notify_all();
 
 		uint32_t tickCounter{};
+		// Microseconds per Tick
 		const uint32_t tickDiffUs{ 1'000'000ul >> std::countr_zero(tickRate) };
 		const uint32_t remainder{ 1'000'000ul & (tickRate - 1)};
 		uint32_t frac{};
@@ -294,6 +301,7 @@ namespace Carnival::Network {
 		m_PendingConnections.emplace_back(getTime(), addr, port, 0);
 	}
 
+	// Serialize Packet header into buffer
 	void NetworkManager::writeHeader(const HeaderInfo& header)
 	{
 		auto append = [&](const auto& val) {
@@ -317,6 +325,7 @@ namespace Carnival::Network {
 
 		return;
 	}
+	// Parse header from buffer, validate
 	HeaderInfo NetworkManager::parseHeader()
 	{
 		auto size = m_PacketBuffer.size();
@@ -385,7 +394,7 @@ namespace Carnival::Network {
 		if (header.seqNum > state.lastReceived + 32) return false;
 
 		uint32_t diff{ state.lastSent - header.lastSeqRecv };
-		// Nat Rebind
+		// Nat Rebind, update endpoint if peer is validated
 		if (packet.fromAddr != ep.addr || packet.fromPort != ep.port) {
 			// ACK field validation
 			uint32_t mask = (diff == 32) ? UINT32_MAX : ((1 << diff) - 1);
@@ -509,6 +518,7 @@ namespace Carnival::Network {
 		// check existing sessions
 		if (header.sessionID != 0) {
 			if (auto it{ m_Sessions.find(header.sessionID) }; it != m_Sessions.end()) {
+				// Resume Existing Session
 				auto& localEndPoint = it->second.endpoint[1];
 				auto state = localEndPoint.state;
 
@@ -547,6 +557,7 @@ namespace Carnival::Network {
 		}
 
 		// check max vs curr sessions
+		// reject if full
 		if (m_Sessions.size() >= m_MaxSessions) {
 			rejectConnection(info.fromAddr, info.fromPort);
 			return;
@@ -562,7 +573,7 @@ namespace Carnival::Network {
 			}
 		}
 
-		// create new connect
+		// create new session
 		// for now just accept
 		PendingPeer peer{
 			.lastSendTime = getTime(),
@@ -611,6 +622,7 @@ namespace Carnival::Network {
 		}
 		return false;
 	}
+	// refresh session timing, keep alive
 	inline bool NetworkManager::handleHeartbeat(const PacketInfo packet,
 		const HeaderInfo& header,
 		uint8_t Channel, uint8_t endpoint) noexcept {
@@ -651,6 +663,7 @@ namespace Carnival::Network {
 		return true;
 	}
 
+	// Construct header, Send over Correct socket
 	inline void NetworkManager::sendRequest(ipv4_addr addr, uint16_t port) noexcept
 	{
 		m_PacketBuffer.clear();
@@ -689,7 +702,6 @@ namespace Carnival::Network {
 		writeHeader(info);
 		sendReliable(addr, port);
 	}
-
 	inline void NetworkManager::sendHeartbeat(uint32_t sessionID, Session& sesh,
 		uint8_t ep, uint8_t ch) noexcept
 	{
@@ -703,9 +715,11 @@ namespace Carnival::Network {
 			.flags{ static_cast<PacketFlags>(HEARTBEAT | (1 << (ch + 3))) },
 		};
 		writeHeader(info);
+		// pick socket
 		if (ep) sendReliable(sesh.endpoint[ep]);
 		else sendUnreliable(sesh.endpoint[ep]);
 	}
+
 
 	inline bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port) noexcept
 	{

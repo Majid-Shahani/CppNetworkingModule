@@ -8,6 +8,7 @@ namespace Carnival::ECS {
 	{
 		uint64_t id{ Archetype::hashArchetypeID(components) };
 		
+		// insert/fetch archetype, assert no hash collision
 		auto [it, inserted] = m_Archetypes.try_emplace(id, m_Registry, components, id, static_cast<void*>(this), flag, 5);
 		if (!inserted) {
 			CL_CORE_ASSERT(it->second.flags == flag, "Mismatch Network flags on archetype");
@@ -26,6 +27,7 @@ namespace Carnival::ECS {
 		Entity eID{};
 		while (m_ReplicationBuffer.pop(eID)) {
 			// Resolve Entity -> Shards
+			// single shard only for now
 			uint16_t shardIndex = 0;
 
 			auto& currShard = m_Shards[shardIndex];
@@ -46,7 +48,7 @@ namespace Carnival::ECS {
 			if (snapshot.version >= comp.version) {
 				// version mismatch, deal with it
 				comp.dirty = false;
-				return;
+				continue;
 			}
 
 			snapshot.version = comp.version;
@@ -79,9 +81,10 @@ namespace Carnival::ECS {
 	void World::destroyEntity(Entity e)
 	{
 		const auto& rec = m_EntityManager.get(e);
-		
+		// remove from archetype
 		auto [entity, index] = m_Archetypes.at(rec.pArchetype->getID()).arch->removeEntityAt(rec.index);
 		if (e != entity) {
+			// update swapped entity location
 			m_EntityManager.updateEntityLocation(entity, rec.pArchetype, index);
 		}
 		m_EntityManager.destroyEntity(e);
@@ -93,13 +96,14 @@ namespace Carnival::ECS {
 	}
 	void World::endUpdate()
 	{
-		// Check if NetManager is running, force stop or wait
+		// remove empty archetypes, go maintenance
+		// Needs Syncing between world and net manager
 		m_Phase.store(WorldPhase::MAINTENANCE, std::memory_order::release);
 		std::erase_if(m_Archetypes, [](const auto& pair) {
 			return pair.second.arch->getEntityCount() == 0;
 			});
 		m_Phase.store(WorldPhase::STABLE, std::memory_order::release);
-		
+		// stage reliable updates
 		updateReliable();
 
 		// Temporary 1 shard solution:
