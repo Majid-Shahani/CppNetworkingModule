@@ -172,9 +172,9 @@ namespace Carnival::Network {
 		return true;
 	}
 	// Send To Wrapper using existing memory
-	bool Socket::sendPackets(std::span<const std::byte> packet,
+	bool Socket::sendPacket(std::span<const std::byte> packet,
 		const ipv4_addr outAddr, 
-		uint16_t port) const noexcept
+		uint16_t port) noexcept
 	{
 		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
 		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Sending Packets.");
@@ -193,6 +193,27 @@ namespace Carnival::Network {
 			static_cast<int>(packet.size()),
 			0, (sockaddr*)&address, sizeof(sockaddr_in));
 		if (sent != packet.size()) return false;
+		else return true;
+	}
+	bool Socket::sendPacket(const void* pData, const uint64_t size,
+		const ipv4_addr out, const uint16_t port) noexcept
+	{
+		CL_CORE_ASSERT(winsockState == WSAState::INITIALIZED, "WSA uninitialized");
+		CL_CORE_ASSERT(isBound() && !isError(), "Socket Must be Bound before Sending Packets.");
+		CL_CORE_ASSERT(size != 0, "Packet Size is 0");
+		CL_CORE_ASSERT(pData != nullptr, "Packet Data Poiner is null.");
+
+		if (m_Handle == INVALID_SOCKET) return false;
+
+		sockaddr_in address{};
+		address.sin_family = AF_INET;
+		address.sin_addr.s_addr = htonl(out.addr32);
+		address.sin_port = htons(port);
+
+		int sent = sendto(m_Handle, reinterpret_cast<const char*>(pData),
+			static_cast<int>(size),
+			0, (sockaddr*)&address, sizeof(sockaddr_in));
+		if (sent != size) return false;
 		else return true;
 	}
 	// Non-blocking Poll

@@ -29,8 +29,9 @@ namespace Carnival::Network {
 		// SocketData port (if 0) is overwritten after call to bindSocket
 		bool bindSocket();
 		// Send single UDP Datagram
-		bool sendPackets(std::span<const std::byte> packet, const ipv4_addr outAddr, uint16_t port = 0) const noexcept;
-
+		bool sendPacket(std::span<const std::byte> packet, const ipv4_addr outAddr, uint16_t port = 0) noexcept;
+		bool sendPacket(const void* pData, const uint64_t size,
+			const ipv4_addr out, const uint16_t port) noexcept;
 		PollResult poll() const noexcept;
 		// Receive One Datagram
 		PacketInfo receivePacket(std::vector<std::byte>& packet) noexcept;

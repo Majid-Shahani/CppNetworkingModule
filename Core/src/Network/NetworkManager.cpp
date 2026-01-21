@@ -3,6 +3,8 @@
 #include <CNM/NetworkManager.h>
 #include <ECS/World.h>
 
+using namespace Carnival::Engine;
+
 namespace {
 	constexpr uint8_t TYPE_MASK = 0b00000111;
 	constexpr uint8_t CHANNEL_MASK = Carnival::Network::UNRELIABLE | 
@@ -37,12 +39,6 @@ namespace Carnival::Network {
 		m_PacketBuffer.reserve(PACKET_MTU);
 		m_CommandBuffer.reserve(35);
 		//m_PendingConnections.reserve((m_MaxSessions > 32 ? 32 : m_MaxSessions));
-	}
-
-	uint64_t NetworkManager::getTime() noexcept
-	{
-		static const auto start = std::chrono::steady_clock::now();
-		return (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
 	}
 
 	void NetworkManager::maintainSessions()
@@ -723,7 +719,7 @@ namespace Carnival::Network {
 
 	inline bool NetworkManager::sendReliable(ipv4_addr addr, uint16_t port) noexcept
 	{
-		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, addr, port) }; res) {
+		if (auto res{ m_Socks[1].sendPacket(m_PacketBuffer, addr, port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
 			m_Stats.packetsSent++;
 
@@ -733,7 +729,7 @@ namespace Carnival::Network {
 	}
 	inline bool NetworkManager::sendReliable(Endpoint& ep) noexcept
 	{
-		if (auto res{ m_Socks[1].sendPackets(m_PacketBuffer, ep.addr, ep.port) }; res) {
+		if (auto res{ m_Socks[1].sendPacket(m_PacketBuffer, ep.addr, ep.port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
 			m_Stats.packetsSent++;
 			ep.lastSentTime = getTime();
@@ -742,9 +738,23 @@ namespace Carnival::Network {
 		return false;
 	}
 
+	inline bool NetworkManager::sendReliablePayload(PacketDescriptor& packet) noexcept {
+		CL_CORE_ASSERT(packet.pData && packet.size, "Packet must have data and size");
+
+		auto res{ m_Socks[EP_RELIABLE].sendPacket(packet.pData, packet.size,
+			packet.sesh->endpoint[EP_RELIABLE].addr, packet.sesh->endpoint[EP_RELIABLE].port) };
+		if (res) {
+			m_Stats.bytesSent += packet.size;
+			m_Stats.packetsSent++;
+			packet.sesh->endpoint[EP_RELIABLE].lastSentTime = Engine::getTime();
+			return true;
+		}
+		return false;
+	}
+
 	inline bool NetworkManager::sendUnreliable(ipv4_addr addr, uint16_t port) noexcept
 	{
-		if (auto res{ m_Socks[0].sendPackets(m_PacketBuffer, addr, port) }; res) {
+		if (auto res{ m_Socks[0].sendPacket(m_PacketBuffer, addr, port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
 			m_Stats.packetsSent++;
 
@@ -754,7 +764,7 @@ namespace Carnival::Network {
 	}
 	inline bool NetworkManager::sendUnreliable(Endpoint& ep) noexcept
 	{
-		if (auto res{ m_Socks[0].sendPackets(m_PacketBuffer, ep.addr, ep.port) }; res) {
+		if (auto res{ m_Socks[0].sendPacket(m_PacketBuffer, ep.addr, ep.port) }; res) {
 			m_Stats.bytesSent += m_PacketBuffer.size();
 			m_Stats.packetsSent++;
 			ep.lastSentTime = getTime();

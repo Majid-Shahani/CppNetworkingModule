@@ -34,12 +34,11 @@ namespace Carnival::Network {
 
 		void attemptConnect(ipv4_addr addr, uint16_t port);
 	private:
-		static uint64_t getTime() noexcept;
-
 		inline bool sendReliable(ipv4_addr addr, uint16_t port) noexcept;
 		inline bool sendReliable(Endpoint& ep) noexcept;
 		inline bool sendUnreliable(ipv4_addr addr, uint16_t port) noexcept;
 		inline bool sendUnreliable(Endpoint& ep) noexcept;
+		inline bool sendReliablePayload(PacketDescriptor& packet) noexcept;
 		// void sendSnapshot(ipv4_addr addr, uint16_t port);
 
 		void writeHeader(const HeaderInfo& header);

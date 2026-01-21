@@ -1,6 +1,6 @@
 #pragma once
 #include <string_view>
-
+#include <chrono>
 namespace Carnival::utils {
 	// ========================= Hash ============================ //
 	constexpr uint32_t FNV32_OFFSET_BASIS{ 0x811C9DC5u };
@@ -35,5 +35,15 @@ namespace Carnival::utils {
 			hash *= FNV64_PRIME;
 		}
 		return hash;
+	}
+}
+
+namespace Carnival::Engine {
+	inline uint64_t getTime() noexcept
+	{
+		// thread safe but slow
+		static const auto start = std::chrono::steady_clock::now();
+		return (std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - start).count());
 	}
 }

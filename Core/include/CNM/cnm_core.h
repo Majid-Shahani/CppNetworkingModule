@@ -186,6 +186,34 @@ namespace Carnival::Network {
 		PacketFlags type{};
 	};
 	
+	// Descriptors in resend Arena
+	struct PacketDescriptor {
+		void* pData{ nullptr }; // serialized data buffer
+		uint64_t size{}; // must be less than MTU
+		Session* sesh{ nullptr };
+		uint32_t sequenceNum{};
+		uint16_t resendCount{};
+		bool	 Acked{ false };
+
+		PacketDescriptor() = default;
+		PacketDescriptor(const PacketDescriptor&) = delete;
+		PacketDescriptor& operator=(const PacketDescriptor&) = delete;
+		PacketDescriptor(PacketDescriptor&& other) noexcept 
+			: pData{ other.pData }, size{ other.size },
+			sesh{ other.sesh }, sequenceNum{ other.sequenceNum },
+			resendCount{ other.resendCount }, Acked{ other.Acked }
+		{
+			other.pData = nullptr;
+			other.size = 0;
+			other.sesh = nullptr;
+			other.sequenceNum = 0;
+			other.resendCount = 0;
+			other.Acked = true;
+		}
+		~PacketDescriptor() {
+			if (pData) delete[] pData;
+		}
+	};
 	//=========================================== DEBUG ===================================//
 	struct NetworkStats {
 		uint64_t packetsSent{};
