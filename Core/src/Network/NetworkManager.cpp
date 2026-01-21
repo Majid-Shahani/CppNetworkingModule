@@ -158,28 +158,29 @@ namespace Carnival::Network {
 	{
 		auto now = Engine::getTime();
 		for (auto it{ m_ResendBuffer.begin() }; it != m_ResendBuffer.end();) {
-			if (!m_Sessions.contains(it->sessionID) 
-				|| (it->resendCount >= m_Policy.maxRetries)) {
+			if (!(m_Sessions.contains(it->sessionID)) 
+				|| (it->resendCount >= m_Policy.maxRetries)
+				|| !(it->sesh->endpoint[EP_RELIABLE].state == ConnectionState::CONNECTED)) {
 				it = m_ResendBuffer.erase(it);
 				continue;
 			}
 
 			auto& state = it->sesh->states[CH_RELIABLE];
 			// Check for Ack
-			if (!it->Acked) {
+			if (!(it->Acked)) {
 				auto diff = state.lastSent - it->sequenceNum;
-				if (diff > 32) {
+				if (diff >= 32) {
 					it = m_ResendBuffer.erase(it);
 					continue;
 				}
-				it->Acked = ((state.receivedACKField >> diff) & 1);
+				it->Acked = ((state.receivedACKField >> diff) & 1ul);
 			}
 			if (it->Acked) {
 				it = m_ResendBuffer.erase(it);
 				continue;
 			}
 
-			if ((now - it->lastSendTime) > m_Policy.resendDelay) {
+			if ((now - it->lastSendTime) >= m_Policy.resendDelay) {
 				m_CommandBuffer.emplace_back(&(*it), static_cast<PacketFlags>(STATE_LOAD | RELIABLE));
 				it->lastSendTime = now;
 			}
@@ -261,7 +262,12 @@ namespace Carnival::Network {
 					continue;
 				}
 			}
-			else sesh.graceTimer = 0;
+			else {
+				std::print("Session {} Is Connected.\n", it->first);
+				std::print("  Sent Seq: {}, Received Seq: {}\n",
+					it->second.states[1].lastSent, it->second.states[1].lastReceived);
+				sesh.graceTimer = 0;
+			}
 			it++;
 		}
 	}
@@ -290,6 +296,7 @@ namespace Carnival::Network {
 					m_Stats.packetsSent, m_Stats.packetsReceived, m_Stats.packetsDropped);
 				std::print("  Bytes:\n    Sent: {}\n    Received: {}\n",
 					m_Stats.bytesSent, m_Stats.bytesReceived);
+
 				cleanupSessions();
 			}
 
@@ -477,16 +484,15 @@ namespace Carnival::Network {
 		if (header.seqNum >= state.lastReceived) {
 			state.sendingAckF <<= header.seqNum - state.lastReceived;
 			state.lastReceived = header.seqNum;
-			state.sendingAckF |= 1;
+			state.sendingAckF |= 1ul;
 		}
 		else {
-			state.sendingAckF |= 1 << (state.lastReceived - header.seqNum);
+			state.sendingAckF |= (1 << (state.lastReceived - header.seqNum));
 		}
 
 		ep.lastRecvTime = now;
 
 		uint32_t peerAckMask = header.ackField << diff;
-		peerAckMask |= (1u << diff);
 		state.receivedACKField |= peerAckMask;
 
 		return true;
@@ -733,6 +739,9 @@ namespace Carnival::Network {
 
 	void NetworkManager::queueReliablePayload(uint32_t id, Session& sesh)
 	{
+		CL_CORE_ASSERT(sesh.endpoint[CH_RELIABLE].state == ConnectionState::CONNECTED,
+			"Endpoint must be connected before sending");
+
 		auto& context{ m_pWorld->getShardContext(id) };
 		// copy contextData, etc.
 		// size of data to be replicated, derive from world later
@@ -744,6 +753,7 @@ namespace Carnival::Network {
 		auto packetSize{ sizeofHeader + sizeOfData };
 		auto packet{ new std::byte[packetSize]() };
 
+		sesh.states[CH_RELIABLE].receivedACKField <<= 1;
 		HeaderInfo info{
 			.protocol = HEADER_VERSION,
 			.seqNum{sesh.states[CH_RELIABLE].lastSent++},
