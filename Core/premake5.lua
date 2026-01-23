@@ -1,7 +1,7 @@
 project "Core"
 	kind "StaticLib"
 	language "C++"
-	cppdialect "C++latest"
+	cppdialect "C++23"
 	staticruntime "on"
 	
 	targetdir ("%{wks.location}/bin/" .. outputdir .. "/%{prj.name}")

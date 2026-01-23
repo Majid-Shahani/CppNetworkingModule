@@ -1,8 +1,7 @@
 project "ServerApp"
 	kind "ConsoleApp"
 	language "C++"
-	cppdialect "C++latest"
-	staticruntime "on"
+	cppdialect "C++23"
 	
 	targetdir ("%{wks.location}/bin/" .. outputdir .. "/%{prj.name}")
 	objdir ("%{wks.location}/bin-int/" .. outputdir .. "/%{prj.name}")
@@ -37,6 +36,10 @@ project "ServerApp"
 			"Ws2_32.lib",
 			"winmm",
 		}
+	
+	filter { "system:windows", "toolset:msc*" }
+		staticruntime "on"
+	
 	filter "system:linux"
 		defines
 		{
