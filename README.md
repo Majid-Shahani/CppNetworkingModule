@@ -103,9 +103,9 @@ Premake can be:
 
 Clone the repository and enter it:
 
-git clone https://github.com/Majid-Shahani/CppNetworkingModule
+`git clone https://github.com/Majid-Shahani/CppNetworkingModule`
 
-cd CppNetworkingModule
+`cd CppNetworkingModule`
 
 ---
 
@@ -128,19 +128,19 @@ Uses:
 
 Generate project files:
 
-call vendor\premake\premake5.exe vs2026
+`call vendor\premake\premake5.exe vs2026`
 
 Build (Debug, x64):
 
-msbuild Networking.slnx /p:Configuration=Debug /p:Platform=x64 /m
+`msbuild Networking.slnx /p:Configuration=Debug /p:Platform=x64 /m`
 
 Run the server:
 
-bin\Windowsx64-Debug\ServerApp\ServerApp.exe
+`bin\Windowsx64-Debug\ServerApp\ServerApp.exe`
 
 In a **second terminal**, run the client:
 
-bin\Windowsx64-Debug\ClientApp\ClientApp.exe
+`bin\Windowsx64-Debug\ClientApp\ClientApp.exe`
 
 
 ---
@@ -153,22 +153,22 @@ Uses:
 
 Generate project files:
 
-call vendor\premake\premake5.exe vs2026 --cc=clang
+`call vendor\premake\premake5.exe vs2026 --cc=clang`
 
 
 Build (Debug, x64):
 
-msbuild Networking.sln /p:Configuration=Debug /p:Platform=x64 /m
+`msbuild Networking.sln /p:Configuration=Debug /p:Platform=x64 /m`
 
 
 Run the server:
 
-bin\Windowsx64-Debug\ServerApp\ServerApp.exe
+`bin\Windowsx64-Debug\ServerApp\ServerApp.exe`
 
 
 In a **second terminal**, run the client:
 
-bin\Windowsx64-Debug\ClientApp\ClientApp.exe
+`bin\Windowsx64-Debug\ClientApp\ClientApp.exe`
 
 
 ---
@@ -181,20 +181,20 @@ Uses:
 
 Generate Ninja files:
 
-call vendor\premake\premake5.exe ninja
+`call vendor\premake\premake5.exe ninja`
 
 Build everything:
 
-ninja
+`ninja`
 
 
 Run the server:
 
-bin\Windowsx64-Debug\ServerApp\ServerApp.exe
+`bin\Windowsx64-Debug\ServerApp\ServerApp.exe`
 
 In a **second terminal**, run the client:
 
-bin\Windowsx64-Debug\ClientApp\ClientApp.exe
+`bin\Windowsx64-Debug\ClientApp\ClientApp.exe`
 
 
 ---
@@ -207,22 +207,22 @@ Uses:
 
 Generate Makefiles:
 
-call vendor\premake\premake5.exe gmake2
+`call vendor\premake\premake5.exe gmake2`
 
 
 Build (Debug, x64):
 
-make config=Debug_x64
+`make config=Debug_x64`
 
 
 Run the server:
 
-bin/Windowsx64-Debug/ServerApp/ServerApp.exe
+`bin/Windowsx64-Debug/ServerApp/ServerApp.exe`
 
 
 In a **second terminal**, run the client:
 
-bin/Windowsx64-Debug/ClientApp/ClientApp.exe
+`bin/Windowsx64-Debug/ClientApp/ClientApp.exe`
 
 
 ---
@@ -231,7 +231,7 @@ bin/Windowsx64-Debug/ClientApp/ClientApp.exe
 
 All builds output to:
 
-bin/Windowsx64-Debug/
+`bin/Windowsx64-Debug/`
 
 
 Contents:
