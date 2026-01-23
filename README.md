@@ -1,5 +1,4 @@
 # CppNetworkingModule
-# CppNetworkingModule
 
 A **Windows-only C++23 networking module** for a game engine.
 
