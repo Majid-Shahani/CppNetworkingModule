@@ -49,6 +49,7 @@ project "Core"
 			"winmm",
 		}
 	filter "system:linux"
+		error("This project uses WinSock and must be built with a Windows-native toolchain.")
 		defines
 		{
 			"CL_Platform_Linux"
